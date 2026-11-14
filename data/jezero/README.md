@@ -11,7 +11,13 @@ Ruta de **Perseverance (Mars 2020)** y relieve del cráter Jezero. Coordenadas e
 | `elevation_waypoints.csv` | Lo mismo en CSV | 0,1 MB |
 | `dem_ctx_20m.bin` | Relieve: DTM CTX controlado de 20 m recortado a la zona de la ruta (966 × 475 px) | 0,9 MB |
 | `dem_ctx_20m.json` | Extensión, tamaño, escala y estadísticas del relieve | — |
+<<<<<<< HEAD
 | `grid.json` | Cuadrícula de costes para A*: una celda por objeto, con coordenadas, riesgo y `traversable` (lo genera el script del equipo) | — |
+=======
+| `dem_mola_463m.bin` | Relieve regional: MOLA MEGDR de 128 px/° (~463 m) alrededor de Jezero (615 × 616 px, ~280 × 280 km). Es el terreno lejano de la vista 3D | 0,8 MB |
+| `dem_mola_463m.json` | Extensión y tamaño del relieve regional | — |
+| `grid.json` | Cuadrícula de costes para A* en el contrato del equipo (docs/grid-data-contract.md): 4656 celdas de 200 m con riesgo 1–5, `traversable` y elevación. La genera `scripts/jezero/build-grid.mjs` | 1,0 MB |
+>>>>>>> origin/feat/rover-3d
 | `grid.example.json` | Ejemplo ficticio del contrato; no usar como datos reales | — |
 
 ### `elevation_waypoints.json`
@@ -55,6 +61,12 @@ const alturaEn = (col, fila) => raw[fila * meta.width + col] * meta.scale;
 
 **Precisión:** frente a las 708 alturas medidas por el rover, el error cuadrático medio es de **±3,4 m**, con un sesgo de −0,9 m.
 
+### `dem_mola_463m.bin`
+
+- `Int16` little-endian, fila a fila desde el norte, **metros** respecto al areoide (sin escala).
+- Recorte de la tesela `megt44n000hb.img` (0–44° N, 0–90° E) del MOLA MEGDR de NASA PDS: solo se descargan las filas necesarias.
+- En la zona común con el DTM CTX, la diferencia CTX − MOLA tiene mediana de −5 m (p10 −43 m, p90 +18 m). La vista 3D resta esos 5 m y, junto al borde del recorte, ajusta MOLA para que coincida con el DTM de 20 m.
+
 ## Fuentes en vivo
 
 **Teselas de Mars Trek (WMTS)**, con la plantilla `https://trek.nasa.gov/tiles/Mars/EQ/{capa}/1.0.0/default/default028mm/{z}/{y}/{x}.png`:
@@ -81,4 +93,6 @@ Desde la raíz del repo, con Node 18 o superior:
 ```bash
 node scripts/jezero/fetch-route.mjs   # paradas de Perseverance y perfil de elevación
 node scripts/jezero/fetch-dem.mjs     # descarga el DTM CTX de USGS y lo recorta a la ruta
+node scripts/jezero/fetch-mola.mjs    # relieve regional MOLA (NASA PDS) para el terreno lejano
+node scripts/jezero/build-grid.mjs    # cuadrícula de costes en el contrato del equipo (grid.json)
 ```

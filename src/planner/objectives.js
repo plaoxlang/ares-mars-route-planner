@@ -3,6 +3,10 @@ import { ROVER_SPEED_MPS } from './config.js';
 
 /** Computes route totals using the same edge convention as A*: mean of the two cell values. */
 export function summarizePath(grid, path, roverSpeedMps) {
+<<<<<<< HEAD
+=======
+  if (grid && !Array.isArray(grid) && Array.isArray(grid.grid)) grid = grid.grid; // { meta, grid } de mars_grid.py
+>>>>>>> origin/feat/rover-3d
   let totalRisk = 0;
   let totalTimeSeconds = 0;
   if (Array.isArray(grid)) {

@@ -1,0 +1,20 @@
+{
+  "source": "https://pds-geosciences.wustl.edu/mgs/mgs-m-mola-5-megdr-l3-v1/mgsl_300x/meg128/megt44n000hb.img",
+  "label": "https://pds-geosciences.wustl.edu/mgs/mgs-m-mola-5-megdr-l3-v1/mgsl_300x/meg128/megt44n000hb.lbl",
+  "product": "MGS MOLA Mission Experiment Gridded Data Record (MEGDR), 128 píxeles/grado (NASA PDS Geosciences)",
+  "resolution_m": 463,
+  "width": 615,
+  "height": 616,
+  "west": 74.9375,
+  "east": 79.7421875,
+  "north": 20.8671875,
+  "south": 16.0546875,
+  "encoding": "Int16 little-endian, fila a fila desde el norte; metros",
+  "scale": 1,
+  "elevation_reference": "metros respecto al areoide (MOLA)",
+  "stats": {
+    "min_m": -4180,
+    "max_m": 1032
+  },
+  "generatedAt": "2026-11-14T13:58:56.644Z"
+}

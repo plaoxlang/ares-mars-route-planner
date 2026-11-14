@@ -11,13 +11,9 @@ Ruta de **Perseverance (Mars 2020)** y relieve del cráter Jezero. Coordenadas e
 | `elevation_waypoints.csv` | Lo mismo en CSV | 0,1 MB |
 | `dem_ctx_20m.bin` | Relieve: DTM CTX controlado de 20 m recortado a la zona de la ruta (966 × 475 px) | 0,9 MB |
 | `dem_ctx_20m.json` | Extensión, tamaño, escala y estadísticas del relieve | — |
-<<<<<<< HEAD
-| `grid.json` | Cuadrícula de costes para A*: una celda por objeto, con coordenadas, riesgo y `traversable` (lo genera el script del equipo) | — |
-=======
 | `dem_mola_463m.bin` | Relieve regional: MOLA MEGDR de 128 px/° (~463 m) alrededor de Jezero (615 × 616 px, ~280 × 280 km). Es el terreno lejano de la vista 3D | 0,8 MB |
 | `dem_mola_463m.json` | Extensión y tamaño del relieve regional | — |
 | `grid.json` | Cuadrícula de costes para A* en el contrato del equipo (docs/grid-data-contract.md): 4656 celdas de 200 m con riesgo 1–5, `traversable` y elevación. La genera `scripts/jezero/build-grid.mjs` | 1,0 MB |
->>>>>>> origin/feat/rover-3d
 | `grid.example.json` | Ejemplo ficticio del contrato; no usar como datos reales | — |
 
 ### `elevation_waypoints.json`

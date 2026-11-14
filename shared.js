@@ -183,6 +183,9 @@ export function buildProfile(wrap, points, { onPick, colorAt, tip: tipText, colo
   el('stop', { offset: 1, 'stop-color': accent, 'stop-opacity': 0.02 }, grad);
   const clip = el('clipPath', { id: `pclip-${uid}` }, defs);
   const clipRect = el('rect', { x: 0, y: 0, width: 0, height: H }, clip);
+  // Lo ya recorrido (hasta donde se llegó, aunque luego se volviera atrás): en gris
+  const doneClip = el('clipPath', { id: `pdone-${uid}` }, defs);
+  const doneRect = el('rect', { x: 0, y: 0, width: 0, height: H }, doneClip);
 
   for (let k = 1; k <= 3; k++) {
     const yy = pad.t + ((H - pad.t - pad.b) * k) / 4;
@@ -193,6 +196,8 @@ export function buildProfile(wrap, points, { onPick, colorAt, tip: tipText, colo
   const area = `${line}L${W},${base}L0,${base}Z`;
   el('path', { d: area, fill: 'rgba(255,255,255,0.035)' });
   el('path', { d: line, fill: 'none', stroke: css('--text-3'), 'stroke-width': 1.2, 'vector-effect': 'non-scaling-stroke' });
+  el('path', { d: area, fill: 'rgba(200,206,214,0.13)', 'clip-path': `url(#pdone-${uid})` });
+  el('path', { d: line, fill: 'none', stroke: 'rgba(200,206,214,0.75)', 'stroke-width': 1.8, 'vector-effect': 'non-scaling-stroke', 'clip-path': `url(#pdone-${uid})` });
   el('path', { d: area, fill: `url(#pfill-${uid})`, 'clip-path': `url(#pclip-${uid})` });
   el('path', { d: line, fill: 'none', stroke: accent, 'stroke-width': 1.8, 'vector-effect': 'non-scaling-stroke', 'clip-path': `url(#pclip-${uid})` });
 
@@ -257,6 +262,7 @@ export function buildProfile(wrap, points, { onPick, colorAt, tip: tipText, colo
 
   return {
     recolor,
+    done(i) { doneRect.setAttribute('width', x(points[Math.max(0, i)].dist_total_m)); },
     mark(i) {
       const p = points[i];
       const px = x(p.dist_total_m);

@@ -1,11 +1,11 @@
 // Planificador de rutas tipo "Google Maps" en el mapa 2D: origen, destino y alternativas.
 // El cálculo (A* sobre el DTM) va en planner-worker.js para no bloquear la página.
 // El vehículo es fijo (rover presurizado, ver plan-config.js).
-import { $, num, fmt, latLon } from './shared.js';
+import { $, num, fmt, latLon, M_PER_DEG, tiltClass } from './shared.js';
 import { savePlan, formatHours } from './route-player.js';
 import { VEHICLE, OBJECTIVES } from './plan-config.js';
 
-export function setupPlanner({ L, map, dem, onRouteChange, onPlay, onCreated, onDrive }) {
+export function setupPlanner({ L, map, dem, onRouteChange, onPlay, onCreated, onDrive, onPoints }) {
   const state = {
     active: false,
     vehicle: { ...VEHICLE },
@@ -65,8 +65,8 @@ export function setupPlanner({ L, map, dem, onRouteChange, onPlay, onCreated, on
     const want = state.wantObjective ?? state.lastObjective;
     state.selected = Math.max(0, state.shown.findIndex((r) => r.objectives.includes(want)));
     state.wantObjective = null;
-    drawRoutes();
-    renderResults();
+    drawRoutes({ animate: true });
+    renderResults({ fresh: true });
     notify();
     const done = resultWaiters.splice(0);
     done.forEach((fn) => fn(state.shown));
@@ -140,7 +140,13 @@ export function setupPlanner({ L, map, dem, onRouteChange, onPlay, onCreated, on
     if (!state.ready) { setStatus('Preparando el terreno…'); return; }
     state.reqId += 1;
     setStatus('Calculando rutas…', 'busy');
-    $('plan-results').classList.add('pending');
+    const box = $('plan-results');
+    box.classList.add('pending');
+    box.classList.remove('fresh');
+    $('plan-routes-sec').hidden = false;
+    if (!box.querySelector('.route-card')) {
+      box.innerHTML = Array.from({ length: 3 }, (_, k) => `<div class="route-card skeleton" style="--i:${k}"><i></i><i></i></div>`).join('');
+    }
     // Reparto de objetivos entre los workers (uno por worker si hay suficientes)
     const parts = workers.map(() => []);
     OBJECTIVES.forEach((o, k) => parts[k % workers.length].push(o.key));
@@ -178,7 +184,21 @@ export function setupPlanner({ L, map, dem, onRouteChange, onPlay, onCreated, on
     return out;
   }
 
-  function drawRoutes() {
+  // Trazo animado: la línea "se dibuja" de A a B (en SVG, con el desplazamiento del trazo discontinuo)
+  function animateStroke(layer, ms, delay = 0) {
+    const el = layer.getElement?.();
+    if (!el || typeof el.getTotalLength !== 'function' || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const len = el.getTotalLength();
+    el.style.strokeDasharray = `${len} ${len}`;
+    el.style.strokeDashoffset = String(len);
+    el.getBoundingClientRect();
+    el.style.transition = `stroke-dashoffset ${ms}ms cubic-bezier(0.45, 0, 0.2, 1) ${delay}ms`;
+    el.style.strokeDashoffset = '0';
+    // Al acabar se quita el discontinuo: si no, al hacer zoom la línea quedaría a medias
+    setTimeout(() => { el.style.strokeDasharray = ''; el.style.strokeDashoffset = ''; el.style.transition = ''; }, ms + delay + 60);
+  }
+
+  function drawRoutes({ animate = false } = {}) {
     routeGroup.clearLayers();
     const routes = state.shown ?? [];
     if (state.selected >= routes.length) state.selected = 0;
@@ -187,13 +207,21 @@ export function setupPlanner({ L, map, dem, onRouteChange, onPlay, onCreated, on
     for (const k of order) {
       const latlngs = Array.from(routes[k].cells, toLatLng);
       const sel = k === state.selected;
-      L.polyline(latlngs, { color: '#0b1a2b', weight: sel ? 9 : 7, opacity: 0.85, lineCap: 'round', lineJoin: 'round', interactive: false }).addTo(routeGroup);
-      L.polyline(latlngs, {
+      const casing = L.polyline(latlngs, { color: '#0b1a2b', weight: sel ? 9 : 7, opacity: 0.85, lineCap: 'round', lineJoin: 'round', interactive: false, className: sel ? 'route-sel' : 'route-alt' }).addTo(routeGroup);
+      const line = L.polyline(latlngs, {
         color: sel ? '#4ea1ff' : '#b8c0ca', weight: sel ? 5 : 4, opacity: sel ? 1 : 0.85, lineCap: 'round', lineJoin: 'round',
+        className: sel ? 'route-sel' : 'route-alt',
       })
         .on('click', (e) => { L.DomEvent.stop(e); selectRoute(k); })
         .bindTooltip(`${routes[k].labels.join(' · ')} · ${formatHours(routes[k].hours)} · ${fmt.km(routes[k].distance_m)}`, { sticky: true })
         .addTo(routeGroup);
+      // Ruta nueva: las alternativas se dibujan primero y la elegida encima, un poco después y más lenta
+      if (animate) {
+        const ms = sel ? 1800 : 1250;
+        const delay = sel ? 350 : 0;
+        animateStroke(casing, ms, delay);
+        animateStroke(line, ms, delay);
+      }
     }
     // Si A o B estaban en una zona inalcanzable: línea discontinua del pin al punto donde empieza o acaba la ruta
     const sel = routes[state.selected];
@@ -245,18 +273,67 @@ export function setupPlanner({ L, map, dem, onRouteChange, onPlay, onCreated, on
   // ---------- Interfaz ----------
   function setStatus(text, cls = '') {
     const el = $('plan-status');
+    if (el.textContent === text && el.classList.contains(cls || 'plan-status')) return;
     el.textContent = text;
     el.className = `plan-status ${cls}`;
+    void el.offsetWidth; // reinicia la animación de entrada
+    el.classList.add('flash');
   }
 
+  // Altura y pendiente del terreno en un punto (DTM de 20 m; pendiente con diferencias a ±20 m)
+  function terrainInfo(ll) {
+    const lat = ll.lat;
+    const lon = ll.lng;
+    const h = dem.at(lon, lat);
+    const dLon = 20 / (M_PER_DEG * Math.cos((lat * Math.PI) / 180));
+    const dLat = 20 / M_PER_DEG;
+    const gx = (dem.at(lon + dLon, lat) - dem.at(lon - dLon, lat)) / 40;
+    const gy = (dem.at(lon, lat + dLat) - dem.at(lon, lat - dLat)) / 40;
+    const slope = (Math.atan(Math.hypot(gx, gy)) * 180) / Math.PI;
+    return { h, slope: Number.isFinite(slope) ? slope : 0 };
+  }
+
+  // Trayecto: A y B como dos tarjetas unidas por una línea (como en un navegador), el siguiente punto a
+  // marcar parpadea, un clic en un punto centra el mapa y el botón redondo intercambia A y B.
   function renderPoints() {
-    const row = (kind, letter) => {
+    const next = !state.origin ? 'origin' : !state.dest ? 'dest' : null;
+    const row = (kind, letter, label) => {
       const p = state[kind];
-      return `<div class="plan-point"><span class="pin-badge ${kind}">${letter}</span>
-        <span class="mono">${p ? latLon({ lat: p.ll.lat, lon: p.ll.lng }) : '<span class="dim">pulsa en el mapa</span>'}</span>
-        ${p ? `<button class="link-x" data-clear="${kind}" aria-label="Quitar">×</button>` : ''}</div>`;
+      if (!p) {
+        return `<div class="trip-row empty ${next === kind ? 'next' : ''}">
+          <span class="trip-dot ${kind}"><b>${letter}</b></span>
+          <div class="trip-main"><span class="trip-label">${label}</span>
+            <span class="trip-name">${next === kind ? 'Pulsa en el mapa' : 'Después del origen'}</span></div></div>`;
+      }
+      const t = terrainInfo(p.ll);
+      const cls = tiltClass(t.slope);
+      const over = t.slope > state.vehicle.maxSlope;
+      return `<div class="trip-row set" data-focus="${kind}" title="Centrar el mapa en ${label.toLowerCase()}">
+        <span class="trip-dot ${kind}"><b>${letter}</b></span>
+        <div class="trip-main"><span class="trip-label">${label}</span>
+          <span class="trip-name mono">${latLon({ lat: p.ll.lat, lon: p.ll.lng })}</span>
+          <span class="trip-meta"><span>${fmt.m(t.h)}</span><span class="trip-slope ${cls}">${num(t.slope, 1)}°${over ? ' · fuera de límite' : ''}</span></span></div>
+        <button class="trip-x" type="button" data-clear="${kind}" aria-label="Quitar ${label.toLowerCase()}" title="Quitar">
+          <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M1.5 1.5l7 7M8.5 1.5l-7 7" stroke="currentColor" stroke-width="1.5"/></svg></button>
+      </div>`;
     };
-    $('plan-points').innerHTML = row('origin', 'A') + row('dest', 'B');
+    let summary = '';
+    if (state.origin && state.dest) {
+      const a = state.origin.ll;
+      const b = state.dest.ll;
+      const cos = Math.cos((((a.lat + b.lat) / 2) * Math.PI) / 180);
+      const d = Math.hypot((b.lng - a.lng) * cos, b.lat - a.lat) * M_PER_DEG;
+      const dh = terrainInfo(b).h - terrainInfo(a).h;
+      summary = `<div class="trip-summary"><span><b>${fmt.km(d)}</b> en línea recta</span>
+        <span><b>${dh >= 0 ? '+' : '−'}${num(Math.abs(dh))} m</b> de desnivel</span></div>`;
+    }
+    const canSwap = state.origin && state.dest;
+    $('plan-points').innerHTML = `<div class="trip">
+        <div class="trip-rows">${row('origin', 'A', 'Origen')}<span class="trip-link" aria-hidden="true"></span>${row('dest', 'B', 'Destino')}</div>
+        <button class="trip-swap" type="button" data-swap ${canSwap ? '' : 'disabled'} aria-label="Intercambiar origen y destino" title="Intercambiar A y B">
+          <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M5 2v11M2.5 10.5 5 13l2.5-2.5M11 14V3M8.5 5.5 11 3l2.5 2.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+      </div>${summary}`;
+    onPoints?.({ origin: !!state.origin, dest: !!state.dest });
   }
 
   function warningsFor(r) {
@@ -282,9 +359,10 @@ export function setupPlanner({ L, map, dem, onRouteChange, onPlay, onCreated, on
       <div class="spark-labels mono"><span>${fmt.m(lo)}</span><span>${fmt.m(hi)}</span></div>`;
   }
 
-  function renderResults() {
+  function renderResults({ fresh = false } = {}) {
     const box = $('plan-results');
     box.classList.remove('pending');
+    box.classList.toggle('fresh', fresh);
     const routes = state.shown ?? [];
     const v = state.vehicle;
     if (!routes.length) {
@@ -310,7 +388,7 @@ export function setupPlanner({ L, map, dem, onRouteChange, onPlay, onCreated, on
     box.innerHTML = actions + routes.map((r, k) => {
       const warn = warningsFor(r);
       const sel = k === state.selected;
-      return `<button class="route-card ${sel ? 'sel' : ''}" data-route="${k}" aria-pressed="${sel}">
+      return `<button class="route-card ${sel ? 'sel' : ''}" data-route="${k}" aria-pressed="${sel}" style="--i:${k}">
         <div class="rc-head"><span class="rc-name">${r.labels.join(' · ')}</span>
           <span class="rc-time">${formatHours(r.hours)}</span></div>
         <div class="rc-meta mono">${fmt.km(r.distance_m)} · +${num(r.ascent_m)} m / −${num(r.descent_m)} m · máx ${num(r.max_slope_deg, 1)}°</div>
@@ -328,8 +406,13 @@ export function setupPlanner({ L, map, dem, onRouteChange, onPlay, onCreated, on
   }
 
   $('plan-points').addEventListener('click', (e) => {
+    if (e.target.closest('[data-swap]')) { swapPoints(); return; }
     const kind = e.target.closest('[data-clear]')?.dataset.clear;
-    if (!kind) return;
+    if (!kind) {
+      const f = e.target.closest('[data-focus]')?.dataset.focus;
+      if (f && state[f]) map.flyTo(state[f].ll, Math.max(map.getZoom(), 14), { duration: 0.9 });
+      return;
+    }
     state[kind] = null;
     markers[kind]?.remove();
     markers[kind] = null;
@@ -347,7 +430,7 @@ export function setupPlanner({ L, map, dem, onRouteChange, onPlay, onCreated, on
     const k = e.target.closest('[data-route]')?.dataset.route;
     if (k !== undefined) selectRoute(Number(k));
   });
-  $('plan-swap').addEventListener('click', () => {
+  function swapPoints() {
     if (!state.origin || !state.dest) return;
     state.userEdit = true;
     const o = state.origin.ll;
@@ -356,7 +439,7 @@ export function setupPlanner({ L, map, dem, onRouteChange, onPlay, onCreated, on
     state.dest = null;
     setPoint('origin', d);
     setPoint('dest', o);
-  });
+  }
 
   renderPoints();
   setStatus('Pulsa en el mapa el origen (A).');

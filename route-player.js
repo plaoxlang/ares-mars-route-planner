@@ -42,6 +42,7 @@ export class RoutePlayer {
     // 12–40 s de animación según la longitud (≈ 2 ms por metro)
     this.duration = Math.min(40000, Math.max(12000, route.dist.at(-1) * 2));
     this.t = 0;
+    this.maxT = 0; // lo más lejos que ha llegado reproduciendo (lo ya recorrido, aunque se vuelva atrás)
     this.playing = false;
     this.onUpdate = onUpdate;
     this.onState = onState;
@@ -93,6 +94,7 @@ export class RoutePlayer {
       if (!this.playing) return;
       if (last !== null) this.t += (Math.min(250, now - last) / this.duration) * this.total;
       last = now;
+      if (this.t > this.maxT) this.maxT = Math.min(this.total, this.t);
       if (this.t >= this.total) {
         this.t = this.total;
         this.onUpdate(this.sample(this.t));
@@ -127,6 +129,7 @@ export function mountPlanDock({ wrap, route, colorAt, playBtn, labelEl, subEl, o
   player = new RoutePlayer(route, {
     onUpdate: (s) => {
       profile.mark(s.idx);
+      if (player) profile.done(player.sample(player.maxT).idx);
       labelEl.textContent = clock(s.t);
       subEl.textContent = `${fmt.km(s.dist)} de ${fmt.km(total)} · ${fmt.m(s.elev)} · ×${num(player.speedup)}`;
       onSample(s);
@@ -166,5 +169,5 @@ export function renderPlanStats(el, plan) {
     [`${num(st.max_slope_deg, 1)}°`, 'Pendiente máx.'],
     [plan.labels.join(' · '), 'Alternativa'],
   ];
-  el.innerHTML = items.map(([v, l]) => `<div class="stat"><b>${v}</b><span>${l}</span></div>`).join('');
+  el.innerHTML = items.map(([v, l], k) => `<div class="stat" style="--i:${k}"><b>${v}</b><span>${l}</span></div>`).join('');
 }

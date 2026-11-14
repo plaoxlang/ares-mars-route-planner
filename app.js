@@ -126,7 +126,8 @@ $('elev-legend').innerHTML = `<div class="ramp" style="background:linear-gradien
   <div class="ramp-labels"><span>${fmt.m(dem.min)}</span><span>${fmt.m(dem.max)}</span></div>`;
 
 const wide = () => window.innerWidth > 900; // en escritorio la ficha ocupa la izquierda
-map.fitBounds(demBounds, wide() ? { paddingTopLeft: [400, 20], paddingBottomRight: [20, 20] } : { padding: [10, 10] });
+// Al entrar, el mapa ocupa toda la pantalla (sin ficha ni barra inferior) hasta que se marca un punto
+map.fitBounds(demBounds, wide() ? { paddingTopLeft: [30, 90], paddingBottomRight: [30, 30] } : { padding: [10, 10] });
 
 $('cold-legend').innerHTML = `<div class="ramp" style="background:linear-gradient(to right,${rampCss(COLD_RAMP)})"></div>
   <div class="ramp-labels"><span>más frío de noche</span><span>más templado</span></div>`;
@@ -146,6 +147,8 @@ setLayer(document.querySelector('input[name="layer2d"]:checked')?.value ?? 'hiri
 // La ruta elegida se reproduce en la barra de tiempo: play recorre la ruta con el vehículo a la
 // velocidad estimada (comprimida) y la ficha de la izquierda sigue su posición.
 const planVehicle = {
+  // Gris: hasta donde ha llegado el vehículo (queda marcado aunque se vuelva atrás); blanco: hasta donde está
+  trail: L.polyline([], { color: '#c8ced6', weight: 4, opacity: 0.85, interactive: false }),
   done: L.polyline([], { color: '#ffffff', weight: 3, opacity: 0.95, interactive: false }),
   halo: L.circleMarker([0, 0], { radius: 15, weight: 1, color: PLAN_COLOR, opacity: 0.7, fill: false, interactive: false }),
   dot: L.circleMarker([0, 0], { radius: 7, weight: 3, color: '#fff', fillColor: PLAN_COLOR, fillOpacity: 1, interactive: false }),
@@ -179,6 +182,11 @@ function setDockMode() {
       planVehicle.dot.setLatLng(ll);
       planVehicle.halo.setLatLng(ll);
       planVehicle.done.setLatLngs([...plan.latlngs.slice(0, s.seg + 1), ll]);
+      const pl = planDock?.player;
+      if (pl && pl.maxT > 0) {
+        const m = pl.sample(pl.maxT);
+        planVehicle.trail.setLatLngs([...plan.latlngs.slice(0, m.seg + 1), [m.lat, m.lon]]);
+      } else planVehicle.trail.setLatLngs([]);
       if (planDock?.player.playing && !map.getBounds().pad(-0.15).contains(ll)) map.panTo(ll);
       renderPlanHero(plan, s);
     },
@@ -214,9 +222,61 @@ function renderEmptyHero() {
   });
 }
 
+let specTimer = 0;
+// ---------- Mapa vacío: aviso arriba hasta que se marcan los puntos ----------
+// Sin puntos: el mapa a pantalla completa y un aviso que baja desde arriba parpadeando. Con el primer
+// punto entra la ficha lateral (y la barra inferior); el aviso pide el destino y se va con el segundo.
+const mapHint = document.createElement('div');
+mapHint.className = 'map-hint';
+mapHint.setAttribute('role', 'status');
+mapHint.innerHTML = `<span class="mh-pin"><b>A</b></span><span class="mh-text"><b></b><small></small></span>`;
+document.querySelector('.stage').append(mapHint);
+let hintStep = null;
+function onPoints({ origin, dest }) {
+  const empty = !origin && !dest;
+  const was = document.body.classList.contains('map-empty');
+  document.body.classList.toggle('map-empty', empty);
+  const step = !origin ? 'A' : !dest ? 'B' : null;
+  if (step !== hintStep) {
+    hintStep = step;
+    if (step) {
+      mapHint.querySelector('.mh-pin').className = `mh-pin ${step === 'A' ? 'origin' : 'dest'}`;
+      mapHint.querySelector('.mh-pin b').textContent = step;
+      mapHint.querySelector('.mh-text b').textContent = step === 'A' ? 'Marca el origen en el mapa' : 'Ahora marca el destino';
+      mapHint.querySelector('.mh-text small').textContent = step === 'A'
+        ? 'Haz clic donde empieza la travesía (A)'
+        : 'Haz clic donde quieres llegar (B): las rutas se calculan al momento';
+      mapHint.classList.remove('out');
+      // Reinicia la entrada desde arriba en cada paso
+      mapHint.classList.remove('in');
+      void mapHint.offsetWidth;
+      mapHint.classList.add('in');
+    } else {
+      mapHint.classList.add('out');
+    }
+  }
+  // La barra inferior aparece o desaparece: Leaflet recalcula el tamaño del mapa
+  if (was !== empty) [0, 60, 400].forEach((ms) => setTimeout(() => map.invalidateSize({ pan: false }), ms));
+  // Mientras se espera un punto la barra de capas va plegada (deja sitio al aviso); se despliega con la ruta
+  foldLayers(!!step);
+}
+let layersAutoFolded = false;
+function foldLayers(fold) {
+  const bar = document.querySelector('.layerbar');
+  if (!bar) { setTimeout(() => foldLayers(fold), 50); return; } // layout.js aún no la ha creado
+  const folded = bar.classList.contains('collapsed');
+  if (fold && !folded) { bar.querySelector('.lb-toggle').click(); layersAutoFolded = true; }
+  if (!fold && folded && layersAutoFolded) { bar.querySelector('.lb-toggle').click(); layersAutoFolded = false; }
+}
+
 const planner = setupPlanner({
   L, map, dem,
-  onRouteChange: () => setDockMode(),
+  onPoints,
+  onRouteChange: (plan) => {
+    setDockMode();
+    clearTimeout(specTimer);
+    specTimer = setTimeout(() => prerenderDrive(plan), 400);
+  },
   onPlay: () => planDock?.player.toggle(),
   onCreated: (plan) => offerDrive(plan),
   onDrive: () => goDrive(),
@@ -231,7 +291,7 @@ function cancelDriveOffer() {
   clearInterval(driveOffer.timer);
   driveOffer.el.classList.add('out');
   const el = driveOffer.el;
-  setTimeout(() => el.remove(), 300);
+  setTimeout(() => el.remove(), 550);
   driveOffer = null;
 }
 function offerDrive(plan) {
@@ -241,11 +301,11 @@ function offerDrive(plan) {
   el.className = 'drive-toast';
   el.setAttribute('role', 'status');
   el.innerHTML = `<svg class="dt-ring" viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="17"/><circle class="dt-arc" cx="20" cy="20" r="17"/></svg>
-    <div class="dt-text"><b>Ruta lista · ${plan.labels.join(' · ')}</b><span>Al volante en <i>4</i> s</span></div>
+    <div class="dt-text"><b>Ruta lista · ${plan.labels.join(' · ')}</b><span>Al volante en <i>10</i> s</span></div>
     <button class="btn primary" type="button" data-go>Ir ya</button>
     <button class="btn" type="button" data-stay>Quedarme en el mapa</button>`;
   document.querySelector('.stage').append(el);
-  let left = 4;
+  let left = 10; // segundos de cuenta atrás
   const timer = setInterval(() => {
     left -= 1;
     el.querySelector('i').textContent = String(left);
@@ -261,20 +321,40 @@ document.addEventListener('keydown', () => cancelDriveOffer(), true);
 map.on('zoomstart dragstart', () => { if (!leaving) cancelDriveOffer(); });
 
 let leaving = false;
+// Directo, sin animaciones ni pantallas intermedias: la vista 3D ya está preparada en segundo plano
+// (ver driveUrl/prerender) y arranca con el vuelo hasta detrás del rover.
 function goDrive() {
   const plan = planner.current();
   if (!plan || leaving) return;
   leaving = true;
   cancelDriveOffer();
   planDock?.player.pause();
-  const [lat, lon] = plan.latlngs[0];
-  map.flyTo([lat, lon], 16, { duration: 1.3, easeLinearity: 0.2 });
-  const veil = document.createElement('div');
-  veil.className = 'drive-veil';
-  veil.innerHTML = `<span class="cine-kicker">Al volante</span><h2>${plan.labels.join(' · ')}</h2>`;
-  document.body.append(veil);
-  requestAnimationFrame(() => setTimeout(() => veil.classList.add('on'), 700));
-  setTimeout(() => { location.href = '3d.html#drive'; }, 1500);
+  location.href = driveUrl(plan);
+}
+
+// La URL lleva una huella de la ruta: si cambia la ruta o la alternativa, la vista preparada de antes
+// no vale y se prepara otra.
+function driveUrl(plan) {
+  const key = `${plan.objective}-${Math.round(plan.stats.distance_m)}-${plan.latlngs.length}`;
+  return `3d.html?drive=${encodeURIComponent(key)}`;
+}
+// Chrome/Edge: la vista 3D "al volante" se prerenderiza en cuanto hay ruta (reglas de especulación).
+// Al pulsar Al volante el cambio de página es instantáneo y el vuelo empieza ya. En otros navegadores
+// no hace nada: la página se carga al pulsar (sale de la caché gracias a la precarga de abajo).
+let specEl = null;
+let specUrl = null;
+function prerenderDrive(plan) {
+  const can = HTMLScriptElement.supports?.('speculationrules');
+  const url = plan ? driveUrl(plan) : null;
+  if (!can || url === specUrl) return;
+  specEl?.remove();
+  specEl = null;
+  specUrl = url;
+  if (!url) return;
+  specEl = document.createElement('script');
+  specEl.type = 'speculationrules';
+  specEl.textContent = JSON.stringify({ prerender: [{ source: 'list', urls: [url], eagerness: 'immediate' }] });
+  document.head.append(specEl);
 }
 
 // ---------- Precarga del 3D ----------
@@ -306,10 +386,11 @@ document.addEventListener('keydown', (e) => {
   if (e.key === ' ' && planDock) { e.preventDefault(); planDock.player.toggle(); }
 });
 
-// Ruta inicial: la última trazada (también si se vuelve del 3D) o, si no hay, la de ejemplo de Jezero
+// Al volver del 3D (index.html#plan) se recupera la ruta; si no, el mapa empieza vacío esperando los puntos
 renderEmptyHero();
 setDockMode();
-planner.restore(loadPlan() ?? defaultPlan);
+if (/plan/.test(location.hash)) planner.restore(loadPlan() ?? defaultPlan);
+if (document.body.classList.contains('map-empty')) foldLayers(true);
 
 // ---------- Presentación ----------
 startPresentation({

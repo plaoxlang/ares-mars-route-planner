@@ -2,7 +2,7 @@
 // recorrido, el vehículo con su rumbo y el cono de lo que ve la cámara. Un clic salta a ese punto.
 // Trabaja en píxeles de la textura del terreno (texCanvas): toTex(x, z) convierte desde la escena.
 
-const W = 240;
+const W = 286; // + 6 px de margen y 1 px de borde por lado = 300 px, el ancho de la columna derecha
 const H = 190;
 const PAD = 18; // px de margen alrededor de la ruta
 
@@ -108,12 +108,21 @@ export function createMinimap({ host, texCanvas, toTex, fromTex, onPick }) {
       drawBackground();
     },
     /** x, z: posición; s: distancia recorrida sobre la ruta; yaw: rumbo; camDir: [dx, dz]; fov en grados */
-    update({ x, z, s, yaw, camDir, fov }) {
+    update({ x, z, s, yaw, camDir, fov, maxS = 0 }) {
       if (!route) return;
       // Mientras la imagen del terreno sigue cargando, se repinta el fondo de vez en cuando (no al terminar)
       if (refreshing && performance.now() - lastBg > 4000) drawBackground();
       g.drawImage(bg, 0, 0, W, H);
-      // Tramo recorrido en blanco
+      // Ya recorrido (hasta donde se llegó, aunque se haya vuelto atrás) en gris; hasta la posición actual, en blanco
+      if (maxS > s) {
+        let m = 0;
+        while (m < route.cum.length - 1 && route.cum[m + 1] <= maxS) m++;
+        g.strokeStyle = 'rgba(200,206,214,0.85)';
+        g.lineWidth = 2.6;
+        g.lineJoin = 'round';
+        tracePath(g, m + 1);
+        g.stroke();
+      }
       let n = 0;
       while (n < route.cum.length - 1 && route.cum[n + 1] <= s) n++;
       const [px, py] = toMap(...toTex(x, z));

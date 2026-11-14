@@ -22,7 +22,7 @@ const TOOLS = is3d
     { key: 'info', label: 'Info', blocks: ['sec-routelegend', 'sec-method'] },
   ]
   : [
-    { key: 'info', label: 'Info', blocks: ['sec-sources'] },
+    { key: 'info', label: 'Info', blocks: ['sec-howto', 'sec-sources'] },
   ];
 
 // ---------- Capas: barra fija sobre el mapa (siempre a la vista, no escondida en un menú) ----------
@@ -33,7 +33,7 @@ layerbar.setAttribute('aria-label', 'Capas del mapa');
 layerbar.innerHTML = `<div class="lb-head"><span class="lb-title">Capas</span><b class="lb-active"></b>
   <button type="button" class="lb-toggle" aria-expanded="true" aria-label="Ocultar capas" title="Ocultar o mostrar las capas">
   <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M2 8l4-4 4 4" fill="none" stroke="currentColor" stroke-width="1.5"/></svg></button></div>
-  <div class="lb-body"></div><div class="lb-legends"></div>`;
+  <div class="lb-fold"><div><div class="lb-body"></div><div class="lb-legends"></div></div></div>`;
 const lbBody = layerbar.querySelector('.lb-body');
 const lbLegends = layerbar.querySelector('.lb-legends');
 for (const id of is3d ? ['sec-layers'] : ['sec-overlays']) {
@@ -65,9 +65,18 @@ bar.setAttribute('aria-label', 'Herramientas');
 dock.prepend(bar);
 
 const items = [];
+// Los paneles se abren y cierran con animación (al cerrar se espera a que acabe para ocultarlos)
 function setOpen(item, open) {
-  if (item.pop.hidden === !open) return;
-  item.pop.hidden = !open;
+  const shown = !item.pop.hidden && !item.pop.classList.contains('closing');
+  if (shown === open) return;
+  clearTimeout(item.closeT);
+  if (open) {
+    item.pop.classList.remove('closing');
+    item.pop.hidden = false;
+  } else {
+    item.pop.classList.add('closing');
+    item.closeT = setTimeout(() => { item.pop.hidden = true; item.pop.classList.remove('closing'); }, 500);
+  }
   item.btn.setAttribute('aria-expanded', String(open));
   if (open) item.tool.onOpen?.(); else item.tool.onClose?.();
 }
@@ -90,7 +99,7 @@ for (const tool of TOOLS) {
   const item = { tool, btn, pop };
   items.push(item);
   btn.addEventListener('click', () => {
-    const open = pop.hidden;
+    const open = pop.hidden || pop.classList.contains('closing');
     closeAll(item);
     setOpen(item, open);
     if (open && !tool.side) {

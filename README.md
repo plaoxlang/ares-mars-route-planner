@@ -20,7 +20,11 @@ Después abre <http://localhost:8010>. Necesita conexión a internet: las tesela
 ## Vistas
 
 **Diseño de la interfaz** (común al mapa y al 3D): estructura tipo Flightradar24 con estética tipo SpaceX.
-- A la izquierda, la ficha de *Mi ruta*. Arriba lleva la imagen de satélite de donde va el vehículo y la barra de progreso de A a B. En el mapa, debajo va el planificador; en el 3D, la telemetría y el informe de misión.
+- A la izquierda, la ficha de *Mi ruta*: una tarjeta flotante que mide lo que su contenido y cabe entera sin desplazarse.
+  - En el mapa: nombre y progreso de A a B, las rutas (con *Al volante*, *Reproducir* y *3D* en una fila) y el trayecto.
+  - En el 3D: una foto de satélite pequeña del punto, los datos del punto en tres columnas, la telemetría (una línea por dato) y el informe de misión. En el informe salen los avisos; lo que está en orden queda plegado.
+  - *Cómo calcula* y los datos del vehículo están en *Info*.
+- Paneles, menús, avisos y la barra inferior comparten el mismo estilo flotante: esquinas redondeadas, fondo translúcido con desenfoque, borde fino y sombra. La barra inferior es una burbuja a la derecha de la ficha y el mapa pasa por debajo.
 - Abajo, la barra de herramientas junto a la línea de tiempo. Cada herramienta muestra su valor actual y abre su panel:
   - 3D: *Ruta*, *Relieve*, *Hora* e *Info*;
   - mapa: *Info*.
@@ -28,6 +32,25 @@ Después abre <http://localhost:8010>. Necesita conexión a internet: las tesela
 - En el 3D, las vistas de cámara están arriba a la derecha, con los controles de navegación debajo; a ras de suelo, la telemetría y el minimapa pasan a la derecha.
 - En el móvil, el mapa ocupa todo el ancho y la ficha va debajo.
 - Tipografía Barlow / Barlow Condensed, fondo negro, la selección en blanco y el color reservado a los datos.
+- **Movimiento estilo Apple:** paneles, menús, avisos y tarjetas entran deslizándose desde fuera de la pantalla por su propio borde, sin fundidos, con la curva de desaceleración de iOS (`--apple` en `styles.css`).
+  - La ficha entra desde la izquierda, la barra inferior y sus menús desde abajo, la telemetría, el minimapa y las vistas desde la derecha, y la cabecera desde arriba.
+  - Al cerrarse, los menús vuelven a bajar.
+- **Mapa al entrar:** a pantalla completa, sin ficha ni barra inferior y con la barra de capas plegada. Un aviso baja desde arriba parpadeando: *Marca el origen en el mapa*.
+  - Al marcar A entran la ficha (izquierda) y la barra inferior (abajo), y el aviso pide el destino.
+  - Al marcar B el aviso sube, se calculan las rutas y la barra de capas se despliega.
+  - Al volver del 3D (`index.html#plan`) se recupera la ruta.
+- **Animaciones** (CSS al final de `styles.css`, más el trazo de la ruta en `planner.js`):
+  - **Al cargar:** la cabecera, la ficha, la barra inferior y los controles entran escalonados.
+  - **Menús:** se abren y cierran con movimiento, y la barra de capas se pliega y despliega con suavidad. La capa elegida da un pequeño salto y su leyenda aparece.
+  - **Crear una ruta:**
+    - los pines A y B caen;
+    - mientras calcula salen tarjetas esqueleto con un barrido;
+    - la ruta se dibuja sobre el mapa de A a B (primero las alternativas, la elegida encima);
+    - las tarjetas entran en cascada y la elegida emite un destello;
+    - al elegir otra se despliega su detalle y su perfil se traza.
+  - **Cifras de la cabecera:** entran en cascada cada vez que cambia la ruta, y el perfil de la barra de tiempo se descubre de izquierda a derecha.
+  - **3D:** el informe de misión sube con el veredicto marcado, y la telemetría y el minimapa entran por la derecha al ir a ras de suelo. El botón *Al volante* lleva un brillo que invita a pulsarlo.
+  - Con "reducir movimiento" del sistema todo esto se desactiva.
 
 **Mapa 2D** (`index.html`): Leaflet con la proyección de Marte.
 - Base fija: relieve MOLA en color. Encima, **una capa a elegir**: mosaicos **controlados** CTX (6 m) o HiRISE (25 cm, con CTX donde HiRISE no llega), o las capas calculadas en el navegador a partir del relieve real, **altura** y **pendiente**, o el **frío nocturno** relativo (THEMIS).
@@ -52,9 +75,10 @@ Después abre <http://localhost:8010>. Necesita conexión a internet: las tesela
 - **Hora del día:** el control *Hora solar* (abajo) mueve el Sol en todas las vistas. *Ver un sol* recorre de 5:30 a 19:30 en ~24 s.
   - El Sol se calcula para la latitud de Jezero con declinación de +25° (verano del hemisferio norte).
   - A ras de suelo, el cielo cambia con la hora: color caramelo de día, **halo azul alrededor del Sol al atardecer** (el polvo marciano dispersa el azul hacia delante) y estrellas de noche. Es una aproximación visual, no un modelo de transferencia radiativa.
-- **Al volante:** al crear una ruta en el mapa aparece una cuenta atrás de 4 s (*Ir ya* / *Quedarme en el mapa*; cualquier otra acción la cancela). También hay un botón *Al volante* en las rutas.
-  - El mapa vuela al inicio de la ruta, funde a negro y abre `3d.html#drive`.
-  - Ahí, tras un telón de ~0,7 s con el nombre de la ruta, la cámara baja en curva desde el aire hasta detrás del rover. Durante el vuelo pasan la exageración, la niebla y el campo de visión de la vista general a los de a ras de suelo, y al llegar la ruta arranca sola.
+- **Al volante:** al crear una ruta en el mapa aparece una cuenta atrás de 10 s (*Ir ya* / *Quedarme en el mapa*; cualquier otra acción la cancela). También hay un botón *Al volante* en las rutas.
+  - Va directo, sin pantallas intermedias: abre `3d.html?drive=…` y la cámara, que empieza ya cerca del inicio de la ruta, baja en curva hasta detrás del rover. Durante el vuelo pasan la exageración, la niebla y el campo de visión de la vista general a los de a ras de suelo, y al llegar la ruta arranca sola.
+  - En Chrome y Edge esa vista se **prerenderiza** mientras se mira el mapa (reglas de especulación), así que el cambio de página es instantáneo. Si cambia la ruta o la alternativa, se prepara otra.
+  - En otros navegadores el modelo del rover empieza a cargarse con la página. Mientras tanto la cámara ya se acerca al inicio, así que no hay ni imagen fija ni pantalla de carga.
   - Pulsar *Coche* desde *General* hace el mismo vuelo, más corto.
 - **Precarga:** al abrir el 3D se preparan en segundo plano el modelo del rover, el suelo HiRISE del inicio de la ruta y los shaders (`renderer.compileAsync`). Entrar en *Coche* pasa de ~2,4 s a ~0,2 s. El mapa 2D, cuando ya está cargado, descarga en segundo plano Three.js, el modelo y el relieve para que el 3D salga de la caché.
 - **Detalle al acercarse en *General*:** a menos de ~3,4 km del punto que se mira se monta un parche de 1,6 km con HiRISE (~0,8 m/px) y CTX, fundido por los bordes con el relieve. Sigue la exageración vertical y solo aparece con la capa *Satélite*.
@@ -87,6 +111,11 @@ Después abre <http://localhost:8010>. Necesita conexión a internet: las tesela
   - Panel de telemetría: cabeceo, alabeo, rumbo, velocidad, distancia recorrida y ángulo de cada balancín y bogie. Velocidades ×1 / ×10 / ×100 / ×1000 respecto al tiempo real.
   - A escala real (exageración 1×), con sombras y cielo marciano.
   - **Suelo de cerca:** alrededor del rover se monta un parche de 360 m con HiRISE (25 cm/px). Su brillo se ajusta al CTX de debajo para que no se note el borde.
+  - **Rocas 3D** (`fx.js`): unas 3.800 alrededor del vehículo, con guijarros, piedras y algún bloque.
+    - Facetadas e irregulares, en tonos de basalto, óxido y polvo, medio enterradas y con sombra de contacto.
+    - Se colocan por celdas de 8 m con semilla fija (no cambian de sitio al avanzar) y dejan libre la ruta.
+    - Coste: ~1 ms por fotograma.
+  - **Capas a ras de suelo:** la barra de capas también está en *Coche* y *POV*. Con *Satélite* o *Satélite en color* se ve el suelo HiRISE en ocre. Con *Altura*, *Pendiente*, *Frío nocturno* o *Radiación*, ese mismo suelo detallado se tiñe con el color de la capa, así que se sigue viendo el relieve fino, el grano y las rocas.
   - **Rover vivo** (`fx.js`, solo aspecto):
     - Las ruedas pisan un microrrelieve de ±4 cm (ruido determinista), así que balancines y bogies trabajan.
     - El cuerpo vibra según la velocidad: cabeceo, alabeo y rebote. La cámara tiembla un poco.

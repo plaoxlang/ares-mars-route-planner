@@ -39,8 +39,6 @@ A* permite movimientos cardinales y diagonales, y no permite cortar una esquina 
 Con velocidad constante, la ruta más rápida coincide con la de menor distancia; cambiar la velocidad cambia la estimación de tiempo, pero no qué ruta es más corta. La ruta segura sí puede diferir porque su coste acumula riesgo a lo largo de la distancia.
 
 El cargador también conserva compatibilidad con el contrato matricial anterior (`rows`, `cols`, `risk`, `timeSeconds`, `blocked` y `transform`) mientras se migra la aplicación.
-<<<<<<< HEAD
-=======
 
 ## Rejilla real de Jezero
 
@@ -65,4 +63,3 @@ El cargador también conserva compatibilidad con el contrato matricial anterior 
 - **Rendimiento:** arrays tipados e índices enteros, memoria reutilizada entre búsquedas (sin reinicializar) y el resultado con `indices` (Int32Array) y `expanded`.
 
 Con matriz y lista de celdas devuelve el mismo coste óptimo que la versión original. Se comprobó en 240 casos: rejillas aleatorias de los dos formatos, los dos objetivos y los datos de `mars_grid.py`.
->>>>>>> origin/feat/rover-3d

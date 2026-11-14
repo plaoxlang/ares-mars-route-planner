@@ -1,0 +1,5 @@
+# Datos binarios: nunca convertir saltos de línea
+*.bin binary
+*.tif binary
+*.png binary
+*.jpg binary

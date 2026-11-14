@@ -1,11 +1,11 @@
 // Clima medido por Curiosity (REMS) para cada sol, desde el feed público de NASA/CAB.
-// Uso: node scripts/export-weather.mjs
+// Uso: node scripts/gale/export-weather.mjs
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const outDir = join(root, 'data', 'export');
+const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
+const outDir = join(root, 'data', 'gale', 'export');
 const FEED = 'https://mars.nasa.gov/rss/api/?feed=weather&category=msl&feedtype=json';
 
 const num = (v) => (v === '--' || v === '' || v == null || Number.isNaN(Number(v)) ? null : Number(v));

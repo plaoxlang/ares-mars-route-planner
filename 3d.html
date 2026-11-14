@@ -3,8 +3,13 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Martian Map 3D · Gale</title>
+  <title>ARES · Terreno 3D</title>
+  <meta name="description" content="Relieve 3D del cráter Jezero con capas de pendiente, frío nocturno y radiación estimada.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
   <link rel="stylesheet" href="styles.css">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='12' r='9' fill='%23b8502d'/%3E%3Cpath d='M3 15c4-1 6 2 9 0s5-5 9-4' fill='none' stroke='%23ff6a3d' stroke-width='2'/%3E%3C/svg%3E">
   <script type="importmap">
     {
       "imports": {
@@ -16,101 +21,102 @@
 </head>
 <body>
   <header class="topbar">
-    <div class="brand">
-      <span class="dot"></span>
-      <strong>Martian Map 3D</strong>
-      <span class="muted">Prototipo · relieve de Gale / Mount Sharp</span>
-    </div>
-    <div class="topbar-right">
-      <div class="stats" id="stats" aria-live="polite"></div>
-      <a id="to-other-view" class="link-btn" href="index.html">Ver en 2D</a>
-    </div>
+    <a class="brand" href="index.html" style="text-decoration:none" aria-label="ARES, mapa de ruta">
+      <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true">
+        <circle cx="12" cy="12" r="10.5" fill="none" stroke="#2f3640"/>
+        <circle cx="12" cy="12" r="7" fill="#9c4428"/>
+        <path d="M2.5 15.5c3.5-.6 5.5 1.6 8.5-.4s4.8-5.2 9-4.6" fill="none" stroke="#ff6a3d" stroke-width="1.6" stroke-linecap="round"/>
+        <circle cx="20" cy="10.5" r="1.7" fill="#ff6a3d"/>
+      </svg>
+      <span class="brand-name">ARES</span>
+      <span class="brand-sub">Cráter Jezero · travesía de Perseverance</span>
+    </a>
+    <nav class="viewtabs" aria-label="Vista">
+      <a id="to-other-view" href="index.html">Mapa</a>
+      <a href="3d.html" aria-current="page">Terreno 3D</a>
+    </nav>
+    <div class="stats" id="stats"></div>
   </header>
 
-  <main class="layout">
-    <section class="map-col">
-      <div id="scene" aria-label="Vista 3D del terreno">
-        <div id="loading" class="loading" role="status">
-          <strong id="loading-title">Cargando relieve…</strong>
-          <div class="bar"><i id="loading-bar"></i></div>
-          <span id="loading-detail" class="muted small"></span>
-        </div>
-        <span id="tex-status" class="tex-status" aria-live="polite"></span>
+  <main class="stage">
+    <div id="scene" aria-label="Vista 3D del terreno">
+      <div id="loading" class="loading" role="status">
+        <strong id="loading-title">Cargando relieve</strong>
+        <div class="bar"><i id="loading-bar"></i></div>
+        <span id="loading-detail"></span>
       </div>
+      <span id="tex-status" class="chip" aria-live="polite"></span>
+    </div>
 
-      <div class="timeline">
-        <button id="play" class="btn" type="button" aria-label="Reproducir ruta">▶</button>
-        <input id="slider" type="range" min="0" max="0" value="0" aria-label="Parada de la ruta">
-        <span id="slider-label" class="mono"></span>
-      </div>
-    </section>
+    <div class="seg viewbar" role="group" aria-label="Cámara">
+      <button id="overview" type="button" aria-pressed="true">General</button>
+      <button id="top" type="button" aria-pressed="false">Cenital</button>
+      <button id="astro" type="button" aria-pressed="false">Astronauta</button>
+    </div>
 
-    <aside class="panel">
-      <section class="card">
-        <h2>Vista</h2>
-        <div class="controls">
-          <label>Capa del terreno
-            <select id="layer" class="select">
-              <option value="sat">Satélite (HiRISE + CTX)</option>
-              <option value="color">Satélite en color (aprox.)</option>
-              <option value="elev">Altura en color</option>
-              <option value="slope">Pendiente</option>
-              <option value="cold">Frío nocturno relativo (THEMIS)</option>
-              <option value="rad">Radiación estimada</option>
-            </select>
-          </label>
-          <div id="legend" class="legend3d small muted"></div>
-          <label>Exageración vertical: <span id="exag-label" class="mono">2×</span>
-            <input id="exag" type="range" min="1" max="6" step="0.5" value="2">
-          </label>
-          <label class="row"><input id="follow" type="checkbox" checked> Seguir al rover</label>
-          <div class="btn-row">
-            <button id="astro" class="btn wide" type="button">Vista astronauta</button>
-            <button id="overview" class="btn wide" type="button">Vista general</button>
-            <button id="top" class="btn wide" type="button">Vista cenital (2D)</button>
-          </div>
-          <p class="muted small" style="margin:0">Arrastra para girar, rueda para zoom, botón derecho para desplazar. Flechas ← → para moverte entre paradas.</p>
+    <aside class="float float-left" aria-label="Capas y vista">
+      <section class="sec">
+        <h2 class="sec-title">Capa del terreno</h2>
+        <div id="layer" role="radiogroup" aria-label="Capa del terreno">
+          <label class="layer"><input type="radio" name="layer" value="sat" checked><span class="thumb" data-thumb3d="sat"></span>
+            <span><span class="name">Satélite</span><span class="meta">HiRISE sobre CTX · controlados</span></span><span></span></label>
+          <label class="layer"><input type="radio" name="layer" value="color"><span class="thumb" data-thumb3d="color"></span>
+            <span><span class="name">Satélite en color</span><span class="meta">Color Viking aproximado</span></span><span></span></label>
+          <label class="layer"><input type="radio" name="layer" value="elev"><span class="thumb" data-thumb3d="elev"></span>
+            <span><span class="name">Altura</span><span class="meta">DTM CTX · 20 m</span></span><span></span></label>
+          <label class="layer"><input type="radio" name="layer" value="slope"><span class="thumb" data-thumb3d="slope"></span>
+            <span><span class="name">Pendiente</span><span class="meta">DTM CTX · escala ~60 m</span></span><span></span></label>
+          <label class="layer"><input type="radio" name="layer" value="cold"><span class="thumb" data-thumb3d="cold"></span>
+            <span><span class="name">Frío nocturno</span><span class="meta">THEMIS IR · relativo</span></span><span></span></label>
+          <label class="layer"><input type="radio" name="layer" value="rad"><span class="thumb" data-thumb3d="rad"></span>
+            <span><span class="name">Radiación</span><span class="meta">Estimación por modelo</span></span><span></span></label>
         </div>
+        <div id="legend" class="legend3d" style="margin-top:10px"></div>
       </section>
 
-      <section class="card">
-        <h2>Parada seleccionada</h2>
-        <dl id="stop-details" class="details"></dl>
-        <div id="stop-alerts"></div>
-      </section>
-
-      <section class="card">
-        <h2>Clima y avisos</h2>
-        <div class="controls">
-          <label>Colorear ruta por
-            <select id="route-color" class="select">
-              <option value="tilt">Inclinación del rover</option>
-              <option value="temp">Temperatura mínima del aire</option>
-            </select>
-          </label>
-          <div id="route-legend" class="legend3d small muted"></div>
-          <div class="thresholds">
-            <label>Aviso si aire mín. &lt; <input id="th-air" class="num" type="number" step="5"> °C</label>
-            <label>Aviso si suelo mín. &lt; <input id="th-ground" class="num" type="number" step="5"> °C</label>
-          </div>
-          <p id="alert-summary" class="small" style="margin:0"></p>
-          <p class="muted small" style="margin:0">Temperaturas medidas por REMS (Curiosity) el sol en que pasó por cada parada. Umbrales de ejemplo: ajustadlos a los límites reales del traje.</p>
+      <section class="sec">
+        <h2 class="sec-title">Vista</h2>
+        <div class="field" style="margin-top:0">
+          <span class="field-label">Exageración vertical <span id="exag-label" class="mono">2×</span></span>
+          <input id="exag" type="range" min="1" max="6" step="0.5" value="2" aria-label="Exageración vertical">
         </div>
+        <label class="toggle-row" style="margin-top:8px"><span>Seguir al rover</span><input id="follow" class="switch" type="checkbox" checked></label>
       </section>
 
-      <section class="card small muted">
-        <h2>Cómo está hecho</h2>
-        <p id="calib" style="margin:0 0 8px"></p>
-        <ul class="sources">
-          <li>Relieve: DEM HiRISE de Gale (Mars Trek), en 8 bits, calibrado con las alturas reales de las paradas y suavizado.</li>
-          <li>Textura: MRO CTX y encima MRO HiRISE (Mars Trek).</li>
-          <li>Ruta: paradas de Curiosity (NASA MMGIS) apoyadas sobre el terreno.</li>
-          <li>Clima: REMS (CAB/NASA). Frío nocturno: THEMIS IR noche (Mars Trek).</li>
-          <li>Radiación: modelo propio a partir de la media medida por RAD (Curiosity), el cielo visible y la altitud. Es una estimación.</li>
-        </ul>
+      <section class="sec">
+        <h2 class="sec-title">Ruta</h2>
+        <div id="route-legend" class="legend3d"></div>
+      </section>
+
+      <section class="sec">
+        <details class="method">
+          <summary>Cómo está hecho</summary>
+          <p id="calib"></p>
+          <ul>
+            <li>Relieve: DTM CTX controlado de 20 m, Mars 2020 TRN (USGS Astrogeology).</li>
+            <li>Textura: mosaicos controlados MRO CTX y HiRISE de Jezero (Mars Trek).</li>
+            <li>Frío nocturno: THEMIS IR noche (Mars Trek), relativo.</li>
+            <li>Radiación: modelo a partir de la media medida por RAD (Curiosity), el cielo visible y la altitud.</li>
+          </ul>
+          <p>Ratón: arrastrar para girar, rueda para zoom, botón derecho para desplazar. Teclado: ← → paradas, espacio reproduce.</p>
+        </details>
       </section>
     </aside>
+
+    <aside class="float float-right" aria-label="Parada seleccionada">
+      <div id="inspector" aria-live="polite"></div>
+    </aside>
   </main>
+
+  <footer class="dock">
+    <button id="play" class="btn icon play" type="button"></button>
+    <div class="profile-wrap" id="profile-wrap"></div>
+    <div class="readout" aria-live="polite">
+      <div class="r1" id="slider-label"></div>
+      <div class="r2" id="readout-sub"></div>
+    </div>
+    <input id="slider" class="sr-only" type="range" min="0" max="0" value="0" aria-label="Parada de la ruta">
+  </footer>
 
   <script type="module" src="scene3d.js"></script>
 </body>

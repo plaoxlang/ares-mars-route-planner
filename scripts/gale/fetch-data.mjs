@@ -1,12 +1,12 @@
 // Descarga los datos de ruta de Curiosity (MSL) desde el visor MMGIS de NASA.
 // Estos JSON no admiten CORS, por eso se guardan en local en data/.
-// Uso: node scripts/fetch-data.mjs
+// Uso: node scripts/gale/fetch-data.mjs
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const outDir = join(root, 'data');
+const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
+const outDir = join(root, 'data', 'gale');
 
 const SOURCES = {
   'msl_waypoints.json': 'https://mars.nasa.gov/mmgis-maps/MSL/Layers/json/MSL_waypoints.json',

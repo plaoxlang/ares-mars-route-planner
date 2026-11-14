@@ -1,6 +1,6 @@
 // Índice de imágenes de Curiosity para cada sol en el que el rover tiene una parada.
 // Consulta la API pública de raw images de NASA (una petición por sol, concurrencia limitada).
-// Uso: node scripts/export-images.mjs [imagenesPorSol=12]
+// Uso: node scripts/gale/export-images.mjs [imagenesPorSol=12]
 // Si ya existe data/export/images_by_sol.json, solo repite los soles que fallaron
 // (la API devuelve 403 si se le hacen demasiadas peticiones seguidas).
 import { existsSync } from 'node:fs';
@@ -8,8 +8,8 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const dataDir = join(root, 'data');
+const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
+const dataDir = join(root, 'data', 'gale');
 const outDir = join(dataDir, 'export');
 
 const PER_SOL = Number(process.argv[2] ?? 12);

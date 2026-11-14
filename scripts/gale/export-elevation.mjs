@@ -1,12 +1,12 @@
 // Exporta los datos de elevación de la ruta de Curiosity a data/export/.
 // Requiere haber ejecutado antes scripts/fetch-data.mjs.
-// Uso: node scripts/export-elevation.mjs
+// Uso: node scripts/gale/export-elevation.mjs
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const dataDir = join(root, 'data');
+const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
+const dataDir = join(root, 'data', 'gale');
 const outDir = join(dataDir, 'export');
 
 // Radio de Marte del sistema IAU 2000:49900 / EPSG:104905 que usa Mars Trek.

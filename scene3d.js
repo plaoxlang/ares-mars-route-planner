@@ -1,41 +1,38 @@
-// Vista 3D del terreno de Gale con la ruta de Curiosity.
-// Relieve: teselas DEM de Mars Trek (gris de 8 bits proporcional a la altura), calibradas
-// con las alturas reales de las paradas. Textura: CTX + HiRISE de Mars Trek.
+// Vista 3D del cráter Jezero con la ruta de Perseverance.
+// Relieve: DTM CTX controlado de 20 m (USGS, Mars 2020 TRN), recortado a la zona de la ruta.
+// Textura: mosaicos controlados CTX + HiRISE de Mars Trek.
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { Line2 } from 'three/addons/lines/Line2.js';
 import { LineGeometry } from 'three/addons/lines/LineGeometry.js';
 import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
 import {
-  TREK, M_PER_DEG, tiltClass, TILT_LABEL, colors, fmt, $, loadJson, indexFromHash,
-  THEMIS_NIGHT, COLD_RAMP, rampCss, colorizeCold, loadWeather, weatherRows, setupWeatherPanel,
-  hexRgb, rampRgb,
+  TREK, M_PER_DEG, SITE, tiltClass, colors, fmt, num, $, loadJson, indexFromHash, trekTileAt,
+  THEMIS_NIGHT, COLD_RAMP, ELEV_RAMP, rampCss, rampRgb, rgbCss, hexRgb,
+  renderInspector, metricHTML, CLIMATE_NOTE, renderRouteLegend, buildProfile, setPlayButton,
 } from './shared.js';
+import { loadDem, terrainDerivatives, pixelCanvas, bilinear } from './dem.js';
 
-const DEM = { layer: 'Gale_DEM_SMG_1m', ext: 'png', z: 12 };
+// Textura: CTX como base y HiRISE encima (solo cubre parte de la zona).
 const TEXTURES = [
-  { layer: 'Gale_CTX_BlockAdj_dd', ext: 'png', z: 12, label: 'CTX' },
-  { layer: 'curiosity_hirise_mosaic', ext: 'png', z: 13, label: 'HiRISE' },
+  { layer: SITE.tiles.ctx.layer, ext: SITE.tiles.ctx.ext, z: 12, bounds: SITE.tiles.ctx.bounds },
+  { layer: SITE.tiles.hirise.layer, ext: SITE.tiles.hirise.ext, z: 13, bounds: SITE.tiles.hirise.bounds },
 ];
-const DEM_BOUNDS = { west: 137.1225, east: 137.7298, south: -4.9255, north: -4.2490 };
-const PAD_DEG = 0.012;
-const MAX_SEGMENTS = 640; // resolución máxima de la malla por lado
-const SMOOTH_RADIUS_PX = 3; // suavizado para ocultar los escalones de 8 bits
-const ROUTE_LIFT_M = 6; // la ruta flota un poco sobre el terreno para que se vea
+const MAX_SEGMENTS = 1000; // el DTM recortado (~970 px) entra entero en la malla
+const ROUTE_LIFT_M = 4; // la ruta flota un poco sobre el terreno para que se vea
 const EYE_HEIGHT_M = 1.8;
 
 const COLORS = colors();
 const state = { idx: 0, exag: 2, follow: true, astro: false, playing: null, layer: 'sat' };
 
-// ---------- Carga ----------
+// ---------- Carga de teselas ----------
 const progress = { done: 0, total: 0 };
 function setLoading(title, detail) {
   $('loading-title').textContent = title;
   $('loading-detail').textContent = detail ?? '';
-  $('loading-bar').style.width = progress.total ? `${(100 * progress.done) / progress.total}%` : '0';
 }
 
-async function loadTile(url) {
+async function loadTile(url, prog) {
   try {
     const res = await fetch(url);
     if (!res.ok) return null;
@@ -43,200 +40,82 @@ async function loadTile(url) {
   } catch {
     return null;
   } finally {
-    progress.done += 1;
+    prog.done += 1;
   }
 }
 
-const tileUrl = (src, z, r, c) => TREK(src.layer, src.ext).replace('{z}', z).replace('{y}', r).replace('{x}', c);
+const tileUrl = (src, r, c) => TREK(src.layer, src.ext).replace('{z}', src.z).replace('{y}', r).replace('{x}', c);
 
-function tileRange(ext, z) {
+function tileRange(e, z) {
   const d = 180 / 2 ** z;
   return {
     d,
-    c0: Math.floor((ext.west + 180) / d),
-    c1: Math.floor((ext.east + 180) / d - 1e-9),
-    r0: Math.floor((90 - ext.north) / d),
-    r1: Math.floor((90 - ext.south) / d - 1e-9),
+    c0: Math.floor((e.west + 180) / d),
+    c1: Math.floor((e.east + 180) / d - 1e-9),
+    r0: Math.floor((90 - e.north) / d),
+    r1: Math.floor((90 - e.south) / d - 1e-9),
   };
 }
 
-// Pinta en ctx las teselas de una capa que cubren ext, colocándolas por coordenadas
-// (sirve aunque ext no esté alineado a la rejilla de esa capa).
-async function drawMosaic(src, ext, ctx, onTile) {
-  const t = tileRange(ext, src.z);
-  const sx = ctx.canvas.width / (ext.east - ext.west);
-  const sy = ctx.canvas.height / (ext.north - ext.south);
+// Pinta en ctx las teselas de una capa que cubren e, colocándolas por coordenadas.
+// Si la capa declara sus límites, solo se piden las teselas dentro de ellos.
+async function drawMosaic(src, e, ctx, { onTile, prog = progress } = {}) {
+  const b = src.bounds;
+  const area = b ? {
+    west: Math.max(e.west, b.west), east: Math.min(e.east, b.east),
+    south: Math.max(e.south, b.south), north: Math.min(e.north, b.north),
+  } : e;
+  if (area.west >= area.east || area.south >= area.north) return;
+  const t = tileRange(area, src.z);
+  const sx = ctx.canvas.width / (e.east - e.west);
+  const sy = ctx.canvas.height / (e.north - e.south);
   const jobs = [];
   for (let r = t.r0; r <= t.r1; r++) {
     for (let c = t.c0; c <= t.c1; c++) {
-      const x = (c * t.d - 180 - ext.west) * sx;
-      const y = (ext.north - (90 - r * t.d)) * sy;
-      jobs.push(loadTile(tileUrl(src, src.z, r, c)).then((bmp) => {
+      const x = (c * t.d - 180 - e.west) * sx;
+      const y = (e.north - (90 - r * t.d)) * sy;
+      jobs.push(loadTile(tileUrl(src, r, c), prog).then((bmp) => {
         if (bmp) ctx.drawImage(bmp, x, y, t.d * sx, t.d * sy);
         onTile?.();
       }));
     }
   }
-  progress.total += jobs.length;
+  prog.total += jobs.length;
   await Promise.all(jobs);
 }
 
-// ---------- Datos de ruta ----------
-const [elev, weather] = await Promise.all([
-  loadJson('data/export/elevation_waypoints.json'),
-  loadWeather(),
-]);
+// ---------- Datos: ruta y relieve ----------
+setLoading('Cargando relieve', 'DTM CTX de 20 m · USGS');
+$('loading-bar').style.width = '40%';
+const [elev, dem] = await Promise.all([loadJson(SITE.route), loadDem(SITE.dem)]);
 const pts = elev.points;
 renderStats(elev.meta.summary);
+renderRouteLegend();
 
-// Clima REMS por parada, umbrales de aviso y modo de color de la ruta.
-const climate = setupWeatherPanel({
-  pts,
-  weather,
-  onChange() {
-    recolorRoute();
-    climate.renderStopAlerts(state.idx);
-  },
-});
-
-// Extensión: caja de la ruta con margen, recortada a la cobertura del DEM y alineada a teselas.
-const raw = {
-  west: Math.max(DEM_BOUNDS.west, Math.min(...pts.map((p) => p.lon)) - PAD_DEG),
-  east: Math.min(DEM_BOUNDS.east, Math.max(...pts.map((p) => p.lon)) + PAD_DEG),
-  south: Math.max(DEM_BOUNDS.south, Math.min(...pts.map((p) => p.lat)) - PAD_DEG),
-  north: Math.min(DEM_BOUNDS.north, Math.max(...pts.map((p) => p.lat)) + PAD_DEG),
-};
-const tr = tileRange(raw, DEM.z);
-const ext = {
-  west: tr.c0 * tr.d - 180,
-  east: (tr.c1 + 1) * tr.d - 180,
-  north: 90 - tr.r0 * tr.d,
-  south: 90 - (tr.r1 + 1) * tr.d,
-};
+const ext = { west: dem.west, east: dem.east, north: dem.north, south: dem.south };
+const demW = dem.width;
+const demH = dem.height;
+const { heights } = dem;
 const lonC = (ext.west + ext.east) / 2;
 const latC = (ext.south + ext.north) / 2;
 const cosLat = Math.cos((latC * Math.PI) / 180);
 const widthM = (ext.east - ext.west) * cosLat * M_PER_DEG;
 const heightM = (ext.north - ext.south) * M_PER_DEG;
+const toPixel = dem.toPixel;
+const sampleHeight = dem.sample;
+const terrainAt = dem.at;
+const hMin = dem.min;
+const hMax = dem.max;
+const elevRef = hMin;
 
-// ---------- Relieve ----------
-setLoading('Cargando relieve…', 'Teselas DEM HiRISE de Mars Trek');
-const demW = (tr.c1 - tr.c0 + 1) * 256;
-const demH = (tr.r1 - tr.r0 + 1) * 256;
-const demCtx = new OffscreenCanvas(demW, demH).getContext('2d', { willReadFrequently: true });
-const progressTimer = setInterval(() => setLoading('Cargando relieve…', `${progress.done}/${progress.total} teselas`), 200);
-await drawMosaic(DEM, ext, demCtx);
-clearInterval(progressTimer);
-
-const px = demCtx.getImageData(0, 0, demW, demH).data;
-const gray = new Float32Array(demW * demH);
-for (let i = 0; i < gray.length; i++) gray[i] = px[i * 4 + 3] === 0 ? NaN : px[i * 4];
-
-const toPixel = (lon, lat) => [
-  ((lon - ext.west) / (ext.east - ext.west)) * demW,
-  ((ext.north - lat) / (ext.north - ext.south)) * demH,
-];
-
-// Calibración lineal gris → metros con las paradas que caen dentro.
-const calib = (() => {
-  const xs = [];
-  const ys = [];
-  for (const p of pts) {
-    const [x, y] = toPixel(p.lon, p.lat).map(Math.floor);
-    if (x < 0 || y < 0 || x >= demW || y >= demH) continue;
-    const g = gray[y * demW + x];
-    if (Number.isNaN(g)) continue;
-    xs.push(g);
-    ys.push(p.elev_m);
-  }
-  const n = xs.length;
-  const mx = xs.reduce((a, b) => a + b, 0) / n;
-  const my = ys.reduce((a, b) => a + b, 0) / n;
-  let sxy = 0;
-  let sxx = 0;
-  for (let i = 0; i < n; i++) {
-    sxy += (xs[i] - mx) * (ys[i] - my);
-    sxx += (xs[i] - mx) ** 2;
-  }
-  const a = sxy / sxx;
-  const b = my - a * mx;
-  const rmse = Math.sqrt(xs.reduce((s, x, i) => s + (a * x + b - ys[i]) ** 2, 0) / n);
-  return { a, b, n, rmse };
+// Coincidencia del relieve con las alturas medidas por el rover.
+const fit = (() => {
+  const d = pts.map((p) => terrainAt(p.lon, p.lat) - p.elev_m);
+  const mean = d.reduce((a, b) => a + b, 0) / d.length;
+  return { n: d.length, bias: mean, rmse: Math.sqrt(d.reduce((a, b) => a + b * b, 0) / d.length) };
 })();
-
-$('calib').textContent = `Calibración con ${calib.n} paradas: 1 nivel de gris ≈ ${calib.a.toFixed(1)} m; `
-  + `error medio ±${calib.rmse.toFixed(1)} m antes de suavizar. Válido para ver el relieve general, no para detalle de metros.`;
-
-// Alturas en metros + suavizado normalizado (ignora huecos sin datos).
-const heights = (() => {
-  const h = new Float32Array(gray.length);
-  for (let i = 0; i < h.length; i++) h[i] = Number.isNaN(gray[i]) ? NaN : calib.a * gray[i] + calib.b;
-  let out = h;
-  for (let pass = 0; pass < 2; pass++) out = boxBlur(out, demW, demH, SMOOTH_RADIUS_PX);
-  let min = Infinity;
-  for (const v of out) if (!Number.isNaN(v) && v < min) min = v;
-  for (let i = 0; i < out.length; i++) if (Number.isNaN(out[i])) out[i] = min;
-  return out;
-})();
-
-// Media móvil separable (ventana deslizante, coste independiente del radio) que ignora huecos NaN.
-function boxBlur(src, w, h, r) {
-  const sum = new Float32Array(w * h);
-  const cnt = new Float32Array(w * h);
-  for (let y = 0; y < h; y++) {
-    const row = y * w;
-    let s = 0;
-    let c = 0;
-    for (let k = 0; k <= Math.min(w - 1, r); k++) {
-      const v = src[row + k];
-      if (!Number.isNaN(v)) { s += v; c += 1; }
-    }
-    for (let x = 0; x < w; x++) {
-      sum[row + x] = s;
-      cnt[row + x] = c;
-      const add = x + r + 1;
-      const rem = x - r;
-      if (add < w && !Number.isNaN(src[row + add])) { s += src[row + add]; c += 1; }
-      if (rem >= 0 && !Number.isNaN(src[row + rem])) { s -= src[row + rem]; c -= 1; }
-    }
-  }
-  const out = new Float32Array(w * h);
-  for (let x = 0; x < w; x++) {
-    let s = 0;
-    let c = 0;
-    for (let k = 0; k <= Math.min(h - 1, r); k++) { s += sum[k * w + x]; c += cnt[k * w + x]; }
-    for (let y = 0; y < h; y++) {
-      out[y * w + x] = c ? s / c : NaN;
-      const add = y + r + 1;
-      const rem = y - r;
-      if (add < h) { s += sum[add * w + x]; c += cnt[add * w + x]; }
-      if (rem >= 0) { s -= sum[rem * w + x]; c -= cnt[rem * w + x]; }
-    }
-  }
-  return out;
-}
-
-const blurPasses = (src, r, passes) => {
-  let out = src;
-  for (let i = 0; i < passes; i++) out = boxBlur(out, demW, demH, r);
-  return out;
-};
-
-function sampleHeight(fx, fy) {
-  const x = Math.min(Math.max(fx, 0), demW - 1.001);
-  const y = Math.min(Math.max(fy, 0), demH - 1.001);
-  const x0 = Math.floor(x);
-  const y0 = Math.floor(y);
-  const tx = x - x0;
-  const ty = y - y0;
-  const i = y0 * demW + x0;
-  return (heights[i] * (1 - tx) + heights[i + 1] * tx) * (1 - ty)
-    + (heights[i + demW] * (1 - tx) + heights[i + demW + 1] * tx) * ty;
-}
-const terrainAt = (lon, lat) => sampleHeight(...toPixel(lon, lat));
-
-let elevRef = Infinity;
-for (const v of heights) if (v < elevRef) elevRef = v;
+$('calib').textContent = `Relieve: DTM CTX controlado de ${dem.resolution_m} m (${demW} × ${demH} px). `
+  + `Frente a las ${fit.n} alturas medidas por el rover: error cuadrático medio ±${num(fit.rmse, 1)} m, sesgo ${num(fit.bias, 1)} m.`;
 
 const toLocal = (lon, lat, h) => new THREE.Vector3(
   (lon - lonC) * cosLat * M_PER_DEG,
@@ -252,8 +131,8 @@ renderer.outputColorSpace = THREE.SRGBColorSpace;
 host.prepend(renderer.domElement);
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color('#1a110e');
-scene.fog = new THREE.Fog('#1a110e', 25000, 60000);
+scene.background = new THREE.Color('#07080a');
+scene.fog = new THREE.Fog('#07080a', 25000, 60000);
 
 const camera = new THREE.PerspectiveCamera(50, 1, 0.5, 200000);
 const controls = new OrbitControls(camera, renderer.domElement);
@@ -284,12 +163,10 @@ geo.computeVertexNormals();
 
 // Textura: empieza en color marciano y se va completando con CTX y HiRISE.
 const maxTex = renderer.capabilities.maxTextureSize;
-const hiTiles = tileRange(ext, TEXTURES.at(-1).z);
-let texW = (hiTiles.c1 - hiTiles.c0 + 1) * 256;
-let texH = (hiTiles.r1 - hiTiles.r0 + 1) * 256;
-const texScale = Math.min(1, maxTex / Math.max(texW, texH));
-texW = Math.floor(texW * texScale);
-texH = Math.floor(texH * texScale);
+const texPxPerDeg = 256 / (180 / 2 ** TEXTURES.at(-1).z);
+const texScale = Math.min(1, maxTex / ((ext.east - ext.west) * texPxPerDeg));
+const texW = Math.round((ext.east - ext.west) * texPxPerDeg * texScale);
+const texH = Math.round((ext.north - ext.south) * texPxPerDeg * texScale);
 const texCanvas = document.createElement('canvas');
 texCanvas.width = texW;
 texCanvas.height = texH;
@@ -308,74 +185,11 @@ const terrain = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ map: texture
 world.add(terrain);
 
 // ---------- Capas (vistas del terreno) ----------
-const hex = (h) => [1, 3, 5].map((k) => parseInt(h.slice(k, k + 2), 16));
-const ELEV_RAMP = ['#1b2a8a', '#1f78c8', '#28b4a0', '#7bc85a', '#e3d45a', '#e8903c', '#c8503c', '#f2efe9'].map(hex);
-const rampColor = (t) => {
-  const s = Math.min(0.9999, Math.max(0, t)) * (ELEV_RAMP.length - 1);
-  const i = Math.floor(s);
-  const f = s - i;
-  return ELEV_RAMP[i].map((v, k) => v + (ELEV_RAMP[i + 1][k] - v) * f);
-};
-let hMin = Infinity;
-let hMax = -Infinity;
-for (const v of heights) { if (v < hMin) hMin = v; if (v > hMax) hMax = v; }
-
-// Pendiente y sombreado por píxel (se calcula al pedirlo). El DEM es de 8 bits: cada nivel
-// son ~18 m, y en pendientes suaves esos escalones aparecen como bandas falsas de pendiente.
-// Por eso las derivadas se calculan sobre un relieve mucho más suavizado que la malla.
-const SLOPE_SMOOTH = { r: 16, passes: 3 }; // ≈ gaussiana de σ ~16 px (~160 m)
-const SHADE_SMOOTH = { r: 6, passes: 3 };
 let derivs = null;
-function terrainDerivs() {
-  if (derivs) return derivs;
-  const pxX = widthM / demW;
-  const pxY = heightM / demH;
-  const forSlope = blurPasses(heights, SLOPE_SMOOTH.r, SLOPE_SMOOTH.passes);
-  const forShade = blurPasses(heights, SHADE_SMOOTH.r, SHADE_SMOOTH.passes);
-  const az = (315 * Math.PI) / 180; // luz desde el noroeste, como los mapas de sombreado clásicos
-  const alt = (45 * Math.PI) / 180;
-  const sun = [Math.sin(az) * Math.cos(alt), Math.cos(az) * Math.cos(alt), Math.sin(alt)];
-  const slope = new Float32Array(demW * demH);
-  const shade = new Float32Array(demW * demH);
-  const idx = (x, y) => Math.min(demH - 1, Math.max(0, y)) * demW + Math.min(demW - 1, Math.max(0, x));
-  const grad = (hm, x, y) => [
-    (hm[idx(x + 1, y)] - hm[idx(x - 1, y)]) / (2 * pxX),
-    (hm[idx(x, y - 1)] - hm[idx(x, y + 1)]) / (2 * pxY), // y de la imagen crece hacia el sur
-  ];
-  for (let y = 0; y < demH; y++) {
-    for (let x = 0; x < demW; x++) {
-      const i = y * demW + x;
-      const [sE, sN] = grad(forSlope, x, y);
-      slope[i] = (Math.atan(Math.hypot(sE, sN)) * 180) / Math.PI;
-      const [dE, dN] = grad(forShade, x, y);
-      const k = 3; // realza el sombreado sobre un relieve ya suavizado
-      const n = [-dE * k, -dN * k, 1];
-      const len = Math.hypot(...n);
-      shade[i] = Math.max(0, (n[0] * sun[0] + n[1] * sun[1] + n[2] * sun[2]) / len);
-    }
-  }
-  derivs = { slope, shade };
-  return derivs;
-}
+const terrainDerivs = () => (derivs ??= terrainDerivatives(dem));
+const demTexture = (colorAt) => makeTexture(pixelCanvas(demW, demH, colorAt));
 
-function pixelLayer(colorAt) {
-  const c = document.createElement('canvas');
-  c.width = demW;
-  c.height = demH;
-  const g = c.getContext('2d');
-  const img = g.createImageData(demW, demH);
-  for (let i = 0; i < demW * demH; i++) {
-    const [r, gg, b] = colorAt(i);
-    img.data[i * 4] = r;
-    img.data[i * 4 + 1] = gg;
-    img.data[i * 4 + 2] = b;
-    img.data[i * 4 + 3] = 255;
-  }
-  g.putImageData(img, 0, 0);
-  return makeTexture(c);
-}
-
-const SLOPE_COLORS = { ok: hex(COLORS.ok), warn: hex(COLORS.warn), bad: hex(COLORS.bad) };
+const SLOPE_COLORS = { ok: hexRgb(COLORS.ok), warn: hexRgb(COLORS.warn), bad: hexRgb(COLORS.bad) };
 const VIKING = { layer: 'Mars_Viking_MDIM21_ClrMosaic_global_232m', ext: 'jpg', z: 7 };
 
 // Satélite en color: luminosidad de HiRISE/CTX + tono y saturación de Viking (modo de fusión "color").
@@ -390,35 +204,58 @@ function composeColor() {
   LAYERS.color.texture.needsUpdate = true;
 }
 
+// Frío nocturno THEMIS en la rejilla del DTM: gris 0–255 (más claro = más templado de noche).
+// Se carga al arrancar para poder dar el dato en cada parada.
+const coldProg = { done: 0, total: 0 };
+const cold = (async () => {
+  const c = document.createElement('canvas');
+  c.width = demW;
+  c.height = demH;
+  const g = c.getContext('2d', { willReadFrequently: true });
+  g.imageSmoothingQuality = 'high';
+  await drawMosaic(THEMIS_NIGHT, ext, g, { prog: coldProg });
+  const d = g.getImageData(0, 0, demW, demH).data;
+  const gray = new Uint8Array(demW * demH);
+  const hist = new Uint32Array(256);
+  for (let i = 0; i < gray.length; i++) { gray[i] = d[i * 4]; hist[gray[i]]++; }
+  // warmerThan[v] = fracción de la zona más templada que el valor v
+  const warmerThan = new Float32Array(256);
+  let acc = 0;
+  for (let v = 255; v >= 0; v--) { warmerThan[v] = acc / gray.length; acc += hist[v]; }
+  return { gray, warmerThan };
+})();
+let coldData = null;
+cold.then((c) => {
+  coldData = c;
+  renderStop(pts[state.idx], state.idx);
+}).catch(() => { /* el dato es opcional */ });
+
 // ---------- Radiación estimada (modelo, no medida) ----------
-// Dosis = medida media de RAD en Gale × (cielo visible / cielo visible en el aterrizaje)
-//         × efecto de la altitud (menos atmósfera encima → algo más de dosis).
+// Dosis = media medida por RAD (Curiosity, Gale) × cielo visible × efecto de la altitud
+// respecto al punto donde se midió (Jezero está ~1,9 km más alto: menos atmósfera encima).
 // No incluye el ciclo solar ni tormentas solares (SPE), que cambian la dosis en el tiempo.
 const RAD = {
   base_mSv_day: 0.64, // RAD/Curiosity en superficie, Gale (Hassler et al., 2014, Science): 0,64 ± 0,12 mSv/día
+  refElevation_m: -4500, // altitud aproximada de esas medidas (Bradbury Landing, Gale)
   scaleHeight_m: 11100, // altura de escala de la atmósfera de Marte
   columnSensitivity: 0.4, // supuesto: % de cambio de dosis por % de cambio de columna atmosférica (ajustable)
   horizonRadius_m: 3000, // hasta dónde se busca relieve que tape el cielo
   dirs: 16,
-  step: 6, // la rejilla se calcula cada 6 px del DEM (~60 m) y se interpola
+  step: 4, // la rejilla se calcula cada 4 px del DTM (~80 m) y se interpola
 };
 const RAD_RAMP = ['#1d4f4a', '#2f8f6f', '#9ccf5a', '#f2d45a', '#f28a3c', '#d9435a'].map(hexRgb);
 
 let radCache = null;
 function radiationGrid() {
   if (radCache) return radCache;
-  const { step } = RAD;
-  const gw = Math.ceil(demW / step);
-  const gh = Math.ceil(demH / step);
-  const pxX = widthM / demW;
-  const pxY = heightM / demH;
+  const gw = Math.ceil(demW / RAD.step);
+  const gh = Math.ceil(demH / RAD.step);
   const dists = [];
   for (let d = 30; d <= RAD.horizonRadius_m; d *= 1.25) dists.push(d);
   const dirs = Array.from({ length: RAD.dirs }, (_, k) => {
     const a = (2 * Math.PI * k) / RAD.dirs;
-    return [Math.sin(a) / pxX, -Math.cos(a) / pxY]; // píxeles por metro hacia (este, norte)
+    return [Math.sin(a) / dem.pxX, -Math.cos(a) / dem.pxY]; // píxeles por metro hacia (este, norte)
   });
-
   // Fracción de cielo visible (ángulo sólido): 1 − media del seno del horizonte en cada dirección.
   const svfAt = (x, y) => {
     const h0 = sampleHeight(x, y);
@@ -436,40 +273,24 @@ function radiationGrid() {
     }
     return 1 - sum / dirs.length;
   };
-
-  const [rx, ry] = toPixel(pts[0].lon, pts[0].lat); // referencia: lugar de aterrizaje
-  const ref = { svf: svfAt(rx, ry), h: sampleHeight(rx, ry) };
-  const dose = (svf, h) => RAD.base_mSv_day * (svf / ref.svf)
-    * Math.exp((RAD.columnSensitivity * (h - ref.h)) / RAD.scaleHeight_m);
+  const dose = (svf, h) => RAD.base_mSv_day * svf
+    * Math.exp((RAD.columnSensitivity * (h - RAD.refElevation_m)) / RAD.scaleHeight_m);
 
   const grid = new Float32Array(gw * gh);
   let min = Infinity;
   let max = -Infinity;
   for (let gy = 0; gy < gh; gy++) {
     for (let gx = 0; gx < gw; gx++) {
-      const x = Math.min(gx * step, demW - 1);
-      const y = Math.min(gy * step, demH - 1);
+      const x = Math.min(gx * RAD.step, demW - 1);
+      const y = Math.min(gy * RAD.step, demH - 1);
       const v = dose(svfAt(x, y), sampleHeight(x, y));
       grid[gy * gw + gx] = v;
       if (v < min) min = v;
       if (v > max) max = v;
     }
   }
-  // Interpolación bilineal en coordenadas de píxel del DEM.
-  const sample = (x, y) => {
-    const fx = Math.min(Math.max(x / step, 0), gw - 1.001);
-    const fy = Math.min(Math.max(y / step, 0), gh - 1.001);
-    const x0 = Math.floor(fx);
-    const y0 = Math.floor(fy);
-    const tx = fx - x0;
-    const ty = fy - y0;
-    const i = y0 * gw + x0;
-    const i1 = Math.min(i + 1, grid.length - 1);
-    const i2 = Math.min(i + gw, grid.length - 1);
-    const i3 = Math.min(i + gw + 1, grid.length - 1);
-    return (grid[i] * (1 - tx) + grid[i1] * tx) * (1 - ty) + (grid[i2] * (1 - tx) + grid[i3] * tx) * ty;
-  };
-  radCache = { grid, gw, gh, min, max, sample, at: (lon, lat) => sample(...toPixel(lon, lat)) };
+  const sample = (x, y) => bilinear(grid, gw, gh, x / RAD.step, y / RAD.step);
+  radCache = { min, max, sample, at: (lon, lat) => sample(...toPixel(lon, lat)) };
   return radCache;
 }
 
@@ -480,49 +301,40 @@ const LAYERS = {
       colorLayer.viking = document.createElement('canvas');
       colorLayer.viking.width = 256;
       colorLayer.viking.height = Math.round((256 * texH) / texW);
-      await drawMosaic(VIKING, ext, colorLayer.viking.getContext('2d'));
+      await drawMosaic(VIKING, ext, colorLayer.viking.getContext('2d'), { prog: { done: 0, total: 0 } });
       colorLayer.canvas = document.createElement('canvas');
       colorLayer.canvas.width = texW;
       colorLayer.canvas.height = texH;
-      const t = makeTexture(colorLayer.canvas);
-      LAYERS.color.texture = t;
+      LAYERS.color.texture = makeTexture(colorLayer.canvas);
       composeColor();
-      return t;
+      return LAYERS.color.texture;
     },
   },
   elev: {
     build() {
       const { shade } = terrainDerivs();
-      return pixelLayer((i) => {
+      return demTexture((i) => {
         const s = 0.55 + 0.45 * shade[i];
-        return rampColor((heights[i] - hMin) / (hMax - hMin)).map((v) => v * s);
+        return rampRgb(ELEV_RAMP, (heights[i] - hMin) / (hMax - hMin)).map((v) => v * s);
       });
     },
   },
   slope: {
     build() {
       const { slope, shade } = terrainDerivs();
-      return pixelLayer((i) => {
+      return demTexture((i) => {
         const s = 0.6 + 0.4 * shade[i];
         return SLOPE_COLORS[tiltClass(slope[i])].map((v) => v * s);
       });
     },
   },
   cold: {
-    // THEMIS IR nocturno (~100 m/px) reescalado a la rejilla del relieve, coloreado y sombreado.
     async build() {
-      const c = document.createElement('canvas');
-      c.width = demW;
-      c.height = demH;
-      const g = c.getContext('2d', { willReadFrequently: true });
-      g.imageSmoothingQuality = 'high';
-      await drawMosaic(THEMIS_NIGHT, ext, g);
-      const img = g.getImageData(0, 0, demW, demH);
-      colorizeCold(img.data);
+      const { gray } = await cold;
       const { shade } = terrainDerivs();
-      return pixelLayer((i) => {
+      return demTexture((i) => {
         const s = 0.65 + 0.35 * shade[i];
-        return [img.data[i * 4] * s, img.data[i * 4 + 1] * s, img.data[i * 4 + 2] * s];
+        return rampRgb(COLD_RAMP, gray[i] / 255).map((v) => v * s);
       });
     },
   },
@@ -531,11 +343,9 @@ const LAYERS = {
       const r = radiationGrid();
       const { shade } = terrainDerivs();
       const span = r.max - r.min || 1;
-      return pixelLayer((i) => {
-        const x = i % demW;
-        const y = Math.floor(i / demW);
+      return demTexture((i) => {
         const s = 0.7 + 0.3 * shade[i];
-        return rampRgb(RAD_RAMP, (r.sample(x, y) - r.min) / span).map((v) => v * s);
+        return rampRgb(RAD_RAMP, (r.sample(i % demW, Math.floor(i / demW)) - r.min) / span).map((v) => v * s);
       });
     },
   },
@@ -559,68 +369,59 @@ async function setLayer(key) {
 function renderLegend(key) {
   const el = $('legend');
   if (key === 'elev') {
-    const stops = ELEV_RAMP.map((c) => `rgb(${c.join(',')})`).join(',');
-    el.innerHTML = `<div class="ramp" style="background:linear-gradient(to right,${stops})"></div>
-      <div class="ramp-labels mono"><span>${fmt.m(hMin)}</span><span>${fmt.m(hMax)}</span></div>
-      <p>Altura del modelo respecto al areoide, con sombreado del relieve.</p>`;
+    el.innerHTML = `<div class="ramp" style="background:linear-gradient(to right,${rampCss(ELEV_RAMP)})"></div>
+      <div class="ramp-labels"><span>${fmt.m(hMin)}</span><span>${fmt.m(hMax)}</span></div>
+      <p>Altura del DTM respecto al areoide, con sombreado del relieve.</p>`;
   } else if (key === 'slope') {
-    el.innerHTML = `<div class="legend"><i class="sw ok"></i>&lt; 8° <i class="sw warn"></i>8–15° <i class="sw bad"></i>&gt; 15°</div>
-      <p>Pendiente media del terreno a escala de ~300 m (el relieve de 8 bits no da para más). Orienta sobre laderas y cañones; las pendientes locales (rocas, escalones) pueden ser bastante mayores.</p>`;
+    el.innerHTML = `<div class="legend"><span><i class="sw ok"></i>&lt; 8°</span><span><i class="sw warn"></i>8–15°</span><span><i class="sw bad"></i>&gt; 15°</span></div>
+      <p>Pendiente del DTM CTX a escala de ~60 m. Las pendientes locales (rocas, escalones) pueden ser mayores.</p>`;
   } else if (key === 'rad') {
     const r = radiationGrid();
     el.innerHTML = `<div class="ramp" style="background:linear-gradient(to right,${rampCss(RAD_RAMP)})"></div>
-      <div class="ramp-labels mono"><span>${r.min.toFixed(2)}</span><span>${r.max.toFixed(2)} mSv/día</span></div>
-      <p><strong>Estimación, no medida.</strong> Base: ${RAD.base_mSv_day} mSv/día medidos por RAD (Curiosity) en Gale,
-      ajustada por el cielo visible (el relieve bloquea parte de la radiación) y por la altitud (menos atmósfera encima).
+      <div class="ramp-labels"><span>${num(r.min, 2)}</span><span>${num(r.max, 2)} mSv/día</span></div>
+      <p><strong>Estimación, no medida.</strong> Parte de ${num(RAD.base_mSv_day, 2)} mSv/día medidos por RAD (Curiosity) en Gale
+      y la ajusta por el cielo visible (el relieve tapa parte de la radiación) y por la altitud (Jezero está más alto: menos atmósfera encima).
       No incluye el ciclo solar ni tormentas solares.</p>`;
   } else if (key === 'cold') {
     el.innerHTML = `<div class="ramp" style="background:linear-gradient(to right,${rampCss(COLD_RAMP)})"></div>
       <div class="ramp-labels"><span>más frío de noche</span><span>más templado</span></div>
-      <p>THEMIS IR nocturno (~100 m/px). Relativo, no son grados: la arena y el polvo se enfrían más que la roca. Puede haber cortes entre franjas tomadas en noches distintas.</p>`;
+      <p>THEMIS IR nocturno (~100 m/px). Relativo, no son grados: la arena y el polvo se enfrían más que la roca.</p>`;
   } else if (key === 'color') {
     el.innerHTML = '<p>Detalle de HiRISE/CTX con el color de Viking (~300 m/px). Color aproximado, no es una foto en color real.</p>';
   } else {
-    el.innerHTML = '<p>MRO HiRISE (~25 cm/px de origen) sobre MRO CTX (~6 m/px). Escala de grises.</p>';
+    el.innerHTML = '<p>Mosaicos controlados de Jezero: HiRISE (25 cm/px de origen) sobre CTX (6 m/px). Escala de grises.</p>';
   }
 }
 
-// Ruta: apoyada sobre el terreno, coloreada por inclinación o temperatura (tarjeta de clima).
+// ---------- Ruta ----------
 const routePos = [];
 for (const p of pts) {
   const v = toLocal(p.lon, p.lat, terrainAt(p.lon, p.lat) + ROUTE_LIFT_M);
   routePos.push(v.x, v.y, v.z);
 }
+const tiltColor = (i) => COLORS[tiltClass(pts[i].tilt_deg)];
 const routeGeo = new LineGeometry();
 routeGeo.setPositions(routePos);
-function routeColors() {
-  const tmp = new THREE.Color();
-  return pts.flatMap((_, i) => tmp.set(climate.colorAt(i)).toArray());
-}
-function recolorRoute() {
-  routeGeo.setColors(routeColors());
-}
-routeGeo.setColors(routeColors());
+const tmpColor = new THREE.Color();
+routeGeo.setColors(pts.flatMap((_, i) => tmpColor.set(tiltColor(i)).toArray()));
 const routeMat = new LineMaterial({ linewidth: 3, vertexColors: true });
 world.add(new Line2(routeGeo, routeMat));
 
 const doneGeo = new LineGeometry();
-doneGeo.setPositions(routePos.map((v, i) => (i % 3 === 1 ? v + 2 : v)));
+doneGeo.setPositions(routePos.map((v, i) => (i % 3 === 1 ? v + 1.5 : v)));
 const doneMat = new LineMaterial({ color: COLORS.accent, linewidth: 6 });
-const doneLine = new Line2(doneGeo, doneMat);
-world.add(doneLine);
+world.add(new Line2(doneGeo, doneMat));
 
 // Marcador del rover (fuera de world para no deformarlo con la exageración).
-const rover = new THREE.Group();
 // Visible a través del relieve (depthTest off) para no perderlo en la vista general.
-const markerMat = (color, opacity = 1) => new THREE.MeshBasicMaterial({
-  color, transparent: true, opacity, depthTest: false,
-});
-const head = new THREE.Mesh(new THREE.SphereGeometry(35, 24, 16), markerMat('#ffffff'));
+const rover = new THREE.Group();
+const markerMat = (color, opacity = 1) => new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthTest: false });
+const head = new THREE.Mesh(new THREE.SphereGeometry(30, 24, 16), markerMat('#ffffff'));
 head.renderOrder = 10;
 rover.add(head);
-const beam = new THREE.Mesh(new THREE.CylinderGeometry(6, 6, 900, 12), markerMat(COLORS.accent, 0.7));
+const beam = new THREE.Mesh(new THREE.CylinderGeometry(5, 5, 700, 12), markerMat(COLORS.accent, 0.7));
 beam.renderOrder = 9;
-beam.position.y = 450;
+beam.position.y = 350;
 rover.add(beam);
 scene.add(rover);
 
@@ -634,7 +435,23 @@ beacon.visible = false;
 scene.add(beacon);
 
 const routeLines = world.children.filter((o) => o instanceof Line2);
-const SKY = { space: new THREE.Color('#1a110e'), mars: new THREE.Color('#c79f7f') };
+const SKY = { space: new THREE.Color('#07080a'), mars: new THREE.Color('#c79f7f') };
+
+// Miniaturas de las capas del terreno: teselas reales o la rampa de color de cada capa.
+const RAMP_THUMB = (ramp) => `linear-gradient(135deg,${rampCss(ramp)})`;
+const LAYER_THUMBS = {
+  sat: `url("${trekTileAt(SITE.tiles.hirise.layer, 'png', 15, 77.44, 18.445)}")`,
+  color: `url("${trekTileAt('Mars_Viking_MDIM21_ClrMosaic_global_232m', 'jpg', 6, SITE.center.lon, SITE.center.lat)}")`,
+  elev: RAMP_THUMB(ELEV_RAMP),
+  slope: `linear-gradient(135deg,${COLORS.ok} 0 45%,${COLORS.warn} 45% 70%,${COLORS.bad} 70%)`,
+  cold: RAMP_THUMB(COLD_RAMP),
+  rad: RAMP_THUMB(RAD_RAMP),
+};
+document.querySelectorAll('[data-thumb3d]').forEach((t) => { t.style.backgroundImage = LAYER_THUMBS[t.dataset.thumb3d]; });
+
+function setViewButton(id) {
+  ['overview', 'top', 'astro'].forEach((b) => $(b).setAttribute('aria-pressed', String(b === id)));
+}
 
 function setAstroMode(on) {
   state.astro = on;
@@ -645,7 +462,6 @@ function setAstroMode(on) {
   scene.fog.color.copy(on ? SKY.mars : SKY.space);
   scene.fog.near = on ? 400 : 25000;
   scene.fog.far = on ? 9000 : 60000;
-  $('astro').setAttribute('aria-pressed', String(on));
 }
 
 // ---------- Interacción ----------
@@ -669,21 +485,23 @@ resize();
 
 function overview() {
   setAstroMode(false);
+  setViewButton('overview');
   const p = pts[state.idx];
   const target = worldPoint(p.lon, p.lat);
   controls.target.copy(target);
-  camera.position.copy(target).add(new THREE.Vector3(2500, 3500 * Math.max(1, state.exag / 2), 4500));
+  camera.position.copy(target).add(new THREE.Vector3(1800, 2400 * Math.max(1, state.exag / 2), 3200));
   controls.update();
 }
 
 // Vista cenital: cámara vertical con el norte arriba, como un mapa 2D.
 function topView() {
   setAstroMode(false);
+  setViewButton('top');
   const p = pts[state.idx];
   const target = state.follow ? worldPoint(p.lon, p.lat) : new THREE.Vector3(0, ((hMin + hMax) / 2 - elevRef) * state.exag, 0);
   const halfFov = THREE.MathUtils.degToRad(camera.fov / 2);
-  const fit = state.follow ? 6000 : Math.max(heightM, widthM / camera.aspect);
-  const dist = (fit / 2 / Math.tan(halfFov)) * 1.05;
+  const span = state.follow ? 4000 : Math.max(heightM, widthM / camera.aspect);
+  const dist = (span / 2 / Math.tan(halfFov)) * 1.05;
   controls.target.copy(target);
   camera.position.set(target.x, target.y + dist, target.z + 1); // +1 m al sur: evita el polo de OrbitControls
   controls.update();
@@ -691,6 +509,7 @@ function topView() {
 
 function astronautView() {
   setAstroMode(true);
+  setViewButton('astro');
   const i = state.idx;
   const p = pts[i];
   const q = i < pts.length - 1 ? pts[i + 1] : pts[i - 1]; // mirar hacia la siguiente parada
@@ -712,8 +531,10 @@ function select(i, { moveCamera = true } = {}) {
   state.idx = i;
   const p = pts[i];
   $('slider').value = String(i);
-  $('slider-label').textContent = `Parada ${i + 1}/${pts.length} · Sol ${p.sol}`;
+  $('slider-label').textContent = `Sol ${p.sol}`;
+  $('readout-sub').textContent = `${num(i + 1)} / ${num(pts.length)} · ${fmt.km(p.dist_total_m)}`;
   $('to-other-view').href = `index.html#i=${i}`;
+  profile.mark(i);
   history.replaceState(null, '', `#i=${i}`);
 
   rover.position.copy(worldPoint(p.lon, p.lat, ROUTE_LIFT_M * state.exag));
@@ -740,29 +561,53 @@ function setExaggeration(v) {
 }
 
 function renderStop(p, i) {
-  const prev = pts[i - 1];
-  const climb = prev ? p.elev_m - prev.elev_m : 0;
-  const model = terrainAt(p.lon, p.lat);
-  const cls = tiltClass(p.tilt_deg);
-  const rows = [
-    ['Sol', p.sol],
-    ['Elevación real', fmt.m(p.elev_m)],
-    ['Modelo 3D', `${fmt.m(model)} (${model - p.elev_m >= 0 ? '+' : ''}${(model - p.elev_m).toFixed(0)} m)`],
-    ['Δ desde anterior', `${climb >= 0 ? '+' : ''}${climb.toFixed(1)} m en ${fmt.m(p.dist_from_prev_m)}`],
-    ['Recorrido total', fmt.km(p.dist_total_m)],
-    ['Inclinación', `${fmt.deg(p.tilt_deg)} <span class="badge ${cls}">${TILT_LABEL[cls]}</span>`],
-    ['Radiación (est.)', `${radiationGrid().at(p.lon, p.lat).toFixed(2)} mSv/día`],
-    ...weatherRows(climate.wx[i]),
-  ];
-  $('stop-details').innerHTML = rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('');
-  climate.renderStopAlerts(i);
+  const rad = radiationGrid();
+  const dose = rad.at(p.lon, p.lat);
+  const pct = ((dose - rad.min) / (rad.max - rad.min || 1)) * 100;
+  const { slope } = terrainDerivs();
+  const [fx, fy] = toPixel(p.lon, p.lat);
+  const k = Math.round(fy) * demW + Math.round(fx);
+  const slopeHere = slope[k] ?? 0;
+  const coldPct = coldData ? Math.round(coldData.warmerThan[coldData.gray[k] ?? 0] * 100) : null;
+  renderInspector($('inspector'), {
+    p,
+    i,
+    n: pts.length,
+    prev: pts[i - 1],
+    extraMetrics: [
+      metricHTML({ k: 'Pendiente terreno', v: num(slopeHere, 1), unit: '°', sub: 'DTM CTX 20 m', cls: tiltClass(slopeHere) }),
+      metricHTML({
+        k: 'Frío nocturno',
+        v: coldPct === null ? '…' : `${coldPct}`,
+        unit: coldPct === null ? '' : '%',
+        sub: coldPct === null ? 'cargando THEMIS' : `más frío que el ${coldPct} % de la zona`,
+      }),
+      metricHTML({
+        k: 'Radiación est.',
+        v: num(dose, 2),
+        unit: 'mSv/día',
+        sub: 'modelo · ver capa',
+        extra: `<div class="meter" title="Posición dentro del rango de la zona">
+          <i style="width:${pct}%;background:${rgbCss(rampRgb(RAD_RAMP, pct / 100))}"></i></div>`,
+      }),
+      metricHTML({
+        k: 'Altura DTM',
+        v: num(terrainAt(p.lon, p.lat)),
+        unit: 'm',
+        sub: `${terrainAt(p.lon, p.lat) - p.elev_m >= 0 ? '+' : '−'}${num(Math.abs(terrainAt(p.lon, p.lat) - p.elev_m), 1)} m frente al rover`,
+      }),
+    ],
+    sections: CLIMATE_NOTE,
+  });
 }
 
 function renderStats(s) {
   const items = [
-    [fmt.km(s.distance_m), 'recorrido'],
-    [fmt.m(s.elev_end_m - s.elev_start_m), 'desnivel neto'],
-    [fmt.m(s.cumulative_gain_m), 'subida acumulada'],
+    [`${num(s.distance_m / 1000, 1)} km`, 'Recorrido'],
+    [`+${num(s.elev_end_m - s.elev_start_m)} m`, 'Desnivel neto'],
+    [`${num(s.cumulative_gain_m)} m`, 'Subida acumulada'],
+    [`${num(pts.length)}`, 'Paradas'],
+    [`${pts[0].sol}–${pts.at(-1).sol}`, 'Soles'],
   ];
   $('stats').innerHTML = items.map(([v, l]) => `<div class="stat"><b>${v}</b><span>${l}</span></div>`).join('');
 }
@@ -772,22 +617,23 @@ function togglePlay() {
   if (state.playing) {
     clearInterval(state.playing);
     state.playing = null;
-    btn.textContent = '▶';
-    btn.setAttribute('aria-pressed', 'false');
+    setPlayButton(btn, false);
     return;
   }
   if (state.idx >= pts.length - 1) select(0);
-  btn.textContent = '❚❚';
-  btn.setAttribute('aria-pressed', 'true');
+  setPlayButton(btn, true);
   state.playing = setInterval(() => {
     if (state.idx >= pts.length - 1) return togglePlay();
     select(state.idx + 1);
-  }, 80);
+  }, 110);
 }
+
+const profile = buildProfile($('profile-wrap'), pts, { onPick: (i) => select(i), colorAt: tiltColor });
 
 const slider = $('slider');
 slider.max = String(pts.length - 1);
 slider.addEventListener('input', () => select(Number(slider.value)));
+setPlayButton($('play'), false);
 $('play').addEventListener('click', togglePlay);
 $('exag').addEventListener('input', (e) => setExaggeration(Number(e.target.value)));
 $('follow').addEventListener('change', (e) => { state.follow = e.target.checked; });
@@ -797,9 +643,10 @@ $('top').addEventListener('click', topView);
 $('layer').addEventListener('change', (e) => setLayer(e.target.value));
 renderLegend(state.layer);
 document.addEventListener('keydown', (e) => {
-  if (e.target === slider) return;
+  if (e.target.closest('input, select, textarea')) return;
   if (e.key === 'ArrowRight') select(Math.min(state.idx + 1, pts.length - 1));
   if (e.key === 'ArrowLeft') select(Math.max(state.idx - 1, 0));
+  if (e.key === ' ') { e.preventDefault(); togglePlay(); }
 });
 
 setExaggeration(state.exag);
@@ -824,14 +671,12 @@ const markDirty = () => {
   });
 };
 const texStatus = $('tex-status');
-progress.done = 0;
-progress.total = 0;
 const texTimer = setInterval(() => {
   texStatus.textContent = `Cargando imagen: ${progress.done}/${progress.total} teselas`;
 }, 250);
 for (const src of TEXTURES) {
   // eslint-disable-next-line no-await-in-loop
-  await drawMosaic(src, ext, texCtx, markDirty);
+  await drawMosaic(src, ext, texCtx, { onTile: markDirty });
 }
 clearInterval(texTimer);
 texStatus.textContent = '';

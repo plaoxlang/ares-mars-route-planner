@@ -36,7 +36,7 @@ export function setupPlanner({ L, map, dem, onRouteChange, onPlay, onCreated, on
         return;
       }
       if (m.id !== state.reqId || m.id !== pending.id) return; // respuesta antigua
-      if (m.type === 'error') { setStatus(`Error al calcular: ${m.message}`, 'bad'); return; }
+      if (m.type === 'error') { setStatus(`Routing error: ${m.message}`, 'bad'); return; }
       pending.routes.push(...m.routes);
       pending.snap = m.snap ?? pending.snap;
       if (--pending.parts > 0) return;
@@ -115,7 +115,7 @@ export function setupPlanner({ L, map, dem, onRouteChange, onPlay, onCreated, on
   function setPoint(kind, ll, { keepMarker = false } = {}) {
     const cell = toCell(ll);
     if (!cell) {
-      setStatus('Ese punto queda fuera de la zona con relieve (recuadro discontinuo).', 'warn');
+      setStatus('That point is outside the terrain area (dashed box).', 'warn');
       if (keepMarker && state[kind]) markers[kind].setLatLng(state[kind].ll);
       return;
     }
@@ -123,7 +123,7 @@ export function setupPlanner({ L, map, dem, onRouteChange, onPlay, onCreated, on
     placeMarker(kind, ll);
     renderPoints();
     if (state.origin && state.dest) compute();
-    else setStatus('Ahora pulsa en el mapa el destino (B).');
+    else setStatus('Now click the map to set the destination (B).');
   }
 
   map.on('click', (e) => {
@@ -137,9 +137,9 @@ export function setupPlanner({ L, map, dem, onRouteChange, onPlay, onCreated, on
   // ---------- Cálculo ----------
   function compute() {
     if (!state.origin || !state.dest) return;
-    if (!state.ready) { setStatus('Preparando el terreno…'); return; }
+    if (!state.ready) { setStatus('Preparing terrain…'); return; }
     state.reqId += 1;
-    setStatus('Calculando rutas…', 'busy');
+    setStatus('Calculating routes…', 'busy');
     const box = $('plan-results');
     box.classList.add('pending');
     box.classList.remove('fresh');
@@ -303,17 +303,17 @@ export function setupPlanner({ L, map, dem, onRouteChange, onPlay, onCreated, on
         return `<div class="trip-row empty ${next === kind ? 'next' : ''}">
           <span class="trip-dot ${kind}"><b>${letter}</b></span>
           <div class="trip-main"><span class="trip-label">${label}</span>
-            <span class="trip-name">${next === kind ? 'Pulsa en el mapa' : 'Después del origen'}</span></div></div>`;
+            <span class="trip-name">${next === kind ? 'Click the map' : 'After the origin'}</span></div></div>`;
       }
       const t = terrainInfo(p.ll);
       const cls = tiltClass(t.slope);
       const over = t.slope > state.vehicle.maxSlope;
-      return `<div class="trip-row set" data-focus="${kind}" title="Centrar el mapa en ${label.toLowerCase()}">
+      return `<div class="trip-row set" data-focus="${kind}" title="Center map on ${label.toLowerCase()}">
         <span class="trip-dot ${kind}"><b>${letter}</b></span>
         <div class="trip-main"><span class="trip-label">${label}</span>
           <span class="trip-name mono">${latLon({ lat: p.ll.lat, lon: p.ll.lng })}</span>
-          <span class="trip-meta"><span>${fmt.m(t.h)}</span><span class="trip-slope ${cls}">${num(t.slope, 1)}°${over ? ' · fuera de límite' : ''}</span></span></div>
-        <button class="trip-x" type="button" data-clear="${kind}" aria-label="Quitar ${label.toLowerCase()}" title="Quitar">
+          <span class="trip-meta"><span>${fmt.m(t.h)}</span><span class="trip-slope ${cls}">${num(t.slope, 1)}°${over ? ' · over limit' : ''}</span></span></div>
+        <button class="trip-x" type="button" data-clear="${kind}" aria-label="Remove ${label.toLowerCase()}" title="Remove">
           <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M1.5 1.5l7 7M8.5 1.5l-7 7" stroke="currentColor" stroke-width="1.5"/></svg></button>
       </div>`;
     };
@@ -324,13 +324,13 @@ export function setupPlanner({ L, map, dem, onRouteChange, onPlay, onCreated, on
       const cos = Math.cos((((a.lat + b.lat) / 2) * Math.PI) / 180);
       const d = Math.hypot((b.lng - a.lng) * cos, b.lat - a.lat) * M_PER_DEG;
       const dh = terrainInfo(b).h - terrainInfo(a).h;
-      summary = `<div class="trip-summary"><span><b>${fmt.km(d)}</b> en línea recta</span>
-        <span><b>${dh >= 0 ? '+' : '−'}${num(Math.abs(dh))} m</b> de desnivel</span></div>`;
+      summary = `<div class="trip-summary"><span><b>${fmt.km(d)}</b> straight line</span>
+        <span><b>${dh >= 0 ? '+' : '−'}${num(Math.abs(dh))} m</b> elevation change</span></div>`;
     }
     const canSwap = state.origin && state.dest;
     $('plan-points').innerHTML = `<div class="trip">
-        <div class="trip-rows">${row('origin', 'A', 'Origen')}<span class="trip-link" aria-hidden="true"></span>${row('dest', 'B', 'Destino')}</div>
-        <button class="trip-swap" type="button" data-swap ${canSwap ? '' : 'disabled'} aria-label="Intercambiar origen y destino" title="Intercambiar A y B">
+        <div class="trip-rows">${row('origin', 'A', 'Origin')}<span class="trip-link" aria-hidden="true"></span>${row('dest', 'B', 'Destination')}</div>
+        <button class="trip-swap" type="button" data-swap ${canSwap ? '' : 'disabled'} aria-label="Swap origin and destination" title="Swap A and B">
           <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M5 2v11M2.5 10.5 5 13l2.5-2.5M11 14V3M8.5 5.5 11 3l2.5 2.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
       </div>${summary}`;
     onPoints?.({ origin: !!state.origin, dest: !!state.dest });
@@ -339,9 +339,9 @@ export function setupPlanner({ L, map, dem, onRouteChange, onPlay, onCreated, on
   function warningsFor(r) {
     const v = state.vehicle;
     const w = [];
-    if (v.maxHours && r.hours > v.maxHours) w.push(`Supera la autonomía (${num(v.maxHours)} h)`);
-    if (v.battery_kWh && r.energy_wh / 1000 > v.battery_kWh) w.push(`Supera la batería (${num(v.battery_kWh, 1)} kWh)`);
-    if (r.max_slope_deg > v.maxSlope) w.push('Origen o destino en pendiente por encima del límite');
+    if (v.maxHours && r.hours > v.maxHours) w.push(`Exceeds endurance (${num(v.maxHours)} h)`);
+    if (v.battery_kWh && r.energy_wh / 1000 > v.battery_kWh) w.push(`Exceeds battery (${num(v.battery_kWh, 1)} kWh)`);
+    if (r.max_slope_deg > v.maxSlope) w.push('Origin or destination on a slope above the limit');
     return w;
   }
 
@@ -366,39 +366,39 @@ export function setupPlanner({ L, map, dem, onRouteChange, onPlay, onCreated, on
     const routes = state.shown ?? [];
     const v = state.vehicle;
     if (!routes.length) {
-      const why = state.routes.length ? `No hay ruta transitable con una pendiente máxima de ${num(v.maxSlope)}°. Prueba con otros puntos.` : '';
+      const why = state.routes.length ? `No drivable route with a maximum slope of ${num(v.maxSlope)}°. Try other points.` : '';
       box.innerHTML = why ? `<p class="plan-empty">${why}</p>` : '';
-      if (why) setStatus('Sin ruta posible', 'bad');
+      if (why) setStatus('No route possible', 'bad');
       $('plan-routes-sec').hidden = !why;
       return;
     }
     $('plan-routes-sec').hidden = false;
     const moved = [];
-    if (state.snap?.startMoved_m > 0) moved.push(`A se ha movido ${fmt.m(state.snap.startMoved_m)}`);
-    if (state.snap?.goalMoved_m > 0) moved.push(`B se ha movido ${fmt.m(state.snap.goalMoved_m)}`);
+    if (state.snap?.startMoved_m > 0) moved.push(`A moved ${fmt.m(state.snap.startMoved_m)}`);
+    if (state.snap?.goalMoved_m > 0) moved.push(`B moved ${fmt.m(state.snap.goalMoved_m)}`);
     setStatus(moved.length
-      ? `${moved.join(' y ')} al punto alcanzable más cercano: el punto marcado está en una ladera de más de ${num(v.maxSlope)}° o aislado por ellas (línea discontinua).`
-      : `${routes.length} ${routes.length === 1 ? 'ruta' : 'rutas'} · calculadas en ${num(state.ms)} ms`, moved.length ? 'warn' : 'ok');
+      ? `${moved.join(' and ')} to the nearest reachable point: the marked point is on a slope steeper than ${num(v.maxSlope)}° or cut off by them (dashed line).`
+      : `${routes.length} ${routes.length === 1 ? 'route' : 'routes'} · calculated in ${num(state.ms)} ms`, moved.length ? 'warn' : 'ok');
     const actions = `<div class="plan-actions">
-      <button class="btn primary drive-btn" type="button" data-act="drive" title="Vuela a la vista de coche detrás del rover y arranca la ruta">
-        <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.2" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="8" cy="8" r="1.6" fill="currentColor"/><path d="M2 7.2h4.4M9.6 7.2H14M8 9.6V14" stroke="currentColor" stroke-width="1.6"/></svg>Al volante</button>
+      <button class="btn primary drive-btn" type="button" data-act="drive" title="Fly to the chase view behind the rover and start the route">
+        <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.2" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="8" cy="8" r="1.6" fill="currentColor"/><path d="M2 7.2h4.4M9.6 7.2H14M8 9.6V14" stroke="currentColor" stroke-width="1.6"/></svg>Drive</button>
       <button class="btn" type="button" data-act="play">
-        <svg width="12" height="12" viewBox="0 0 14 14" aria-hidden="true"><path d="M3 1.8v10.4L12 7z" fill="currentColor"/></svg>Reproducir</button>
-      <a class="btn" href="3d.html#plan">Ver en 3D</a></div>`;
+        <svg width="12" height="12" viewBox="0 0 14 14" aria-hidden="true"><path d="M3 1.8v10.4L12 7z" fill="currentColor"/></svg>Play</button>
+      <a class="btn" href="3d.html#plan">View in 3D</a></div>`;
     box.innerHTML = actions + routes.map((r, k) => {
       const warn = warningsFor(r);
       const sel = k === state.selected;
       return `<button class="route-card ${sel ? 'sel' : ''}" data-route="${k}" aria-pressed="${sel}" style="--i:${k}">
         <div class="rc-head"><span class="rc-name">${r.labels.join(' · ')}</span>
           <span class="rc-time">${formatHours(r.hours)}</span></div>
-        <div class="rc-meta mono">${fmt.km(r.distance_m)} · +${num(r.ascent_m)} m / −${num(r.descent_m)} m · máx ${num(r.max_slope_deg, 1)}°</div>
+        <div class="rc-meta mono">${fmt.km(r.distance_m)} · +${num(r.ascent_m)} m / −${num(r.descent_m)} m · max ${num(r.max_slope_deg, 1)}°</div>
         ${sel ? `<div class="rc-detail">
           ${sparkline(r.profile)}
           <dl class="rc-kv">
-            <div><dt>Tramo &gt; 8°</dt><dd>${fmt.km(r.steep_m)}</dd></div>
-            <div><dt>Terreno irregular</dt><dd>${fmt.km(r.rough_m)}</dd></div>
-            <div><dt>${v.battery_kWh ? 'Energía' : 'Trabajo mecánico'}</dt><dd>${num(r.energy_wh / 1000, 2)} kWh</dd></div>
-            ${v.battery_kWh ? `<div><dt>Batería usada</dt><dd>${num((100 * r.energy_wh) / 1000 / v.battery_kWh)} %</dd></div>` : ''}
+            <div><dt>Stretch &gt; 8°</dt><dd>${fmt.km(r.steep_m)}</dd></div>
+            <div><dt>Rough terrain</dt><dd>${fmt.km(r.rough_m)}</dd></div>
+            <div><dt>${v.battery_kWh ? 'Energy' : 'Mechanical work'}</dt><dd>${num(r.energy_wh / 1000, 2)} kWh</dd></div>
+            ${v.battery_kWh ? `<div><dt>Battery used</dt><dd>${num((100 * r.energy_wh) / 1000 / v.battery_kWh)}%</dd></div>` : ''}
           </dl></div>` : ''}
         ${warn.map((t) => `<div class="rc-warn">${t}</div>`).join('')}
       </button>`;
@@ -422,7 +422,7 @@ export function setupPlanner({ L, map, dem, onRouteChange, onPlay, onCreated, on
     renderPoints();
     renderResults();
     notify();
-    setStatus(kind === 'origin' ? 'Pulsa en el mapa el origen (A).' : 'Pulsa en el mapa el destino (B).');
+    setStatus(kind === 'origin' ? 'Click the map to set the origin (A).' : 'Click the map to set the destination (B).');
   });
   $('plan-results').addEventListener('click', (e) => {
     if (e.target.closest('[data-act="play"]')) { onPlay?.(); return; }
@@ -442,7 +442,7 @@ export function setupPlanner({ L, map, dem, onRouteChange, onPlay, onCreated, on
   }
 
   renderPoints();
-  setStatus('Pulsa en el mapa el origen (A).');
+  setStatus('Click the map to set the origin (A).');
   $('plan-routes-sec').hidden = true;
 
   return {
@@ -473,7 +473,7 @@ export function setupPlanner({ L, map, dem, onRouteChange, onPlay, onCreated, on
       renderPoints();
       renderResults();
       notify();
-      setStatus('Pulsa en el mapa el origen (A).');
+      setStatus('Click the map to set the origin (A).');
     },
     setPoint: (kind, lat, lon) => setPoint(kind, L.latLng(lat, lon)),
     selectRoute,

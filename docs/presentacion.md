@@ -1,84 +1,84 @@
-# Presentación de ARES (~4 minutos)
+# ARES presentation (~4 minutes)
 
-Guion para exponer el proyecto en el hackathon con la presentación integrada en la app.
+Script for pitching the project at the hackathon using the presentation built into the app.
 
-## Cómo lanzarla
+## How to launch it
 
-1. Abre la app (`index.html` o `3d.html`) en el ordenador de la exposición. Hace falta conexión a internet: teselas, modelo 3D y Three.js se cargan desde fuera.
-2. Pulsa **Presentación** en la cabecera y elige un modo:
-   - **Automática:** cada escena dura lo previsto y pasa sola (unos 4 minutos en total).
-   - **Paso a paso:** cada escena hace su animación y espera a que avances.
+1. Open the app (`index.html` or `3d.html`) on the presentation computer. You need an internet connection: map tiles, the 3D model and Three.js are loaded from outside.
+2. Click **Presentation** in the header and pick a mode:
+   - **Automatic:** each scene runs for its set time and advances on its own (about 4 minutes in total).
+   - **Step by step:** each scene plays its animation and waits for you to advance.
 
-Se cambia de modo en cualquier momento con la tecla `A`. La presentación pasa sola del mapa al 3D y la ruta calculada en el mapa es la que se ve en 3D.
+Switch modes at any time with the `A` key. The presentation moves from the map to 3D on its own, and the route computed on the map is the one shown in 3D.
 
-| Tecla | Acción |
+| Key | Action |
 | --- | --- |
-| `→` · `Av Pág` · `Intro` | Escena siguiente |
-| `←` · `Re Pág` | Escena anterior |
-| `Espacio` | Pausa / continúa (automática) · siguiente (paso a paso) |
-| `A` | Automática ↔ paso a paso |
-| `N` | Notas del presentador en la tarjeta |
-| `Esc` | Salir |
+| `→` · `Page Down` · `Enter` | Next scene |
+| `←` · `Page Up` | Previous scene |
+| `Space` | Pause / resume (automatic) · next (step by step) |
+| `A` | Automatic ↔ step by step |
+| `N` | Speaker notes on the card |
+| `Esc` | Exit |
 
-Un mando de presentaciones (que envía `Av Pág` / `Re Pág`) funciona sin configurar nada.
+A presentation clicker (one that sends `Page Down` / `Page Up`) works with no setup.
 
-**Consejos**
-- Ábrela una vez antes de exponer: el navegador guarda en caché las teselas y el modelo del rover (11,7 MB), y el paso al 3D tarda menos.
-- Pantalla completa del navegador (`F11`) y zoom al 100 %.
-- El reloj de la tarjeta (`1:23 / 4:00`) cuenta solo el tiempo de presentación, sin pausas.
+**Tips**
+- Run it once before you present: the browser caches the tiles and the rover model (11.7 MB), so the switch to 3D is faster.
+- Browser full screen (`F11`) and zoom at 100%.
+- The clock on the card (`1:23 / 4:00`) counts presentation time only, not pauses.
 
-## Guion
+## Script
 
-Lo que se ve en pantalla está en la tarjeta. Debajo, lo que se puede decir (lo mismo que aparece con `N`).
+What appears on screen is on the card. Below it is what you can say (the same text you get with `N`).
 
-### Mapa 2D
+### 2D map
 
-**1 · Planificar una travesía en Marte (13 s).** Vista de Jezero.
-> Una tripulación en Marte necesita saber por dónde ir, cuánto tardará y qué riesgos corre. ARES lo responde sobre el relieve real del cráter Jezero, donde aterrizó Perseverance en 2021. Fue un lago hace 3.500 millones de años. Todo con datos abiertos de NASA y USGS, y todo en el navegador.
+**1 · Planning a drive across Mars (13 s).** View of Jezero.
+> A crew on Mars needs to know where to go, how long it will take and what risks they face. ARES answers that on the real terrain of Jezero Crater, where Perseverance landed in 2021. It was a lake 3.5 billion years ago. All built on open NASA and USGS data, and all in the browser.
 
-**2 · Lo que ven los satélites (18 s).** Se acerca y va activando MOLA → CTX → HiRISE en la barra de capas.
-> Las capas están siempre a la vista. MOLA es la altimetría láser de todo el planeta, a 463 m por píxel. CTX cubre toda la zona a 6 m. HiRISE, la cámara más potente en órbita, llega a 25 cm: se distinguen rocas de un metro.
+**2 · What the orbiters see (18 s).** Zooms in and switches MOLA → CTX → HiRISE in the layer bar.
+> The layers are always in view. MOLA is laser altimetry of the whole planet, at 463 m per pixel. CTX covers the whole area at 6 m. HiRISE, the most powerful camera in orbit, gets down to 25 cm: you can make out one-meter boulders.
 
-**3 · Altura y pendiente, calculadas aquí (18 s).** Capa de altura y después de pendiente.
-> Usamos el modelo digital del terreno de 20 m de USGS, hecho con pares estéreo para guiar el aterrizaje. La pendiente es su gradiente a escala de unos 60 m, calculado en el navegador. Verde por debajo de 8°, ámbar hasta 15° y rojo por encima: los mismos umbrales en toda la app.
+**3 · Elevation and slope, computed right here (18 s).** Elevation layer, then slope.
+> We use the USGS 20 m digital terrain model, built from stereo pairs to guide the landing. Slope is its gradient at a scale of about 60 m, computed in the browser. Green below 8°, amber up to 15° and red above: the same thresholds across the whole app.
 
-**4 · Dónde aprieta el frío de noche (13 s).** Capa de frío nocturno.
-> Es el infrarrojo nocturno de THEMIS: la arena y el polvo pierden el calor antes que la roca. Damos un valor relativo, "más frío que el X % de la zona", porque no hay temperatura medida en cada punto. Solo la estación MEDA del rover la mide, y en pocos soles.
+**4 · Where the night bites hardest (13 s).** Night cold layer.
+> This is nighttime infrared from THEMIS: sand and dust lose their heat faster than rock. We give a relative value, "colder than X% of the area", because there is no measured temperature at every point. Only the rover's MEDA weather station measures it, and only on a handful of sols.
 
-**5 · Clic en A, clic en B (24 s).** Un cursor marca A (delta) y B (borde del cráter) y aparecen tres rutas.
-> Marcamos origen y destino y las rutas se calculan al momento: algoritmo A* sobre 460.000 celdas de 20 m, en 8 direcciones, con tres alternativas en paralelo, cada una en un hilo. Vamos del delta del antiguo río al borde del cráter: casi 6 km y más de 600 m de subida, con un rover presurizado tipo SEV de NASA.
+**5 · Click A, click B (24 s).** A cursor marks A (the delta) and B (the crater rim) and three routes appear.
+> We mark the start and the destination and the routes are computed instantly: A* search over 460,000 cells of 20 m, in 8 directions, with three alternatives in parallel, each on its own thread. We go from the ancient river delta to the crater rim: almost 6 km and over 600 m of climb, in a NASA SEV-type pressurized rover.
 
-**6 · Rápida, segura o eficiente (21 s).** Selecciona cada alternativa.
-> Como en Google Maps. La más rápida minimiza el tiempo, y la velocidad baja con la pendiente y el terreno irregular. La más segura penaliza pendientes y rugosidad aunque sea más larga. La de menos energía cuenta la rodadura y subir 3.000 kg de vehículo. Ninguna pasa por pendientes de más de 18°, el límite del vehículo. Elegimos la más segura.
+**6 · Fast, safe or efficient (21 s).** Selects each alternative in turn.
+> Just like Google Maps. Fastest minimizes time, and speed drops with slope and rough terrain. Safest penalizes slopes and roughness, even if it ends up longer. Least energy accounts for rolling resistance and hauling 3,000 kg of vehicle uphill. None of them crosses slopes above 18°, the vehicle's limit. We pick the safest one.
 
-**7 · La ruta, minuto a minuto (10 s).** Reproduce la ruta en la barra de tiempo.
-> El perfil de abajo es la barra de tiempo: la altura de la ruta coloreada por pendiente, con el reloj de misión T+. Ahora la vemos en 3D.
+**7 · The route, minute by minute (10 s).** Plays the route on the timeline.
+> The profile at the bottom is the timeline: route elevation colored by slope, with the T+ mission clock. Now let's see it in 3D.
 
-### Vista 3D
+### 3D view
 
-**8 · El relieve real, en 3D (18 s).** Vuelo sobre la zona.
-> La malla es el modelo del terreno de 20 m, con la altura exagerada al doble. El rectángulo blanco es nuestra zona de estudio. Fuera, relieve MOLA y la imagen desenfocada para dar contexto. La ruta azul es la que acabamos de calcular.
+**8 · The real terrain, in 3D (18 s).** Flyover of the area.
+> The mesh is the 20 m terrain model, with elevation exaggerated ×2. The white rectangle is our study area. Outside it, MOLA terrain and blurred imagery for context. The blue route is the one we just computed.
 
-**9 · La dosis que llega al suelo (18 s).** Capa de radiación.
-> Partimos de los 0,64 mSv al día que midió el detector RAD de Curiosity, unas 100 veces la dosis natural en la Tierra. La dosis baja donde el relieve tapa cielo y sube donde hay menos atmósfera encima. Calculamos el cielo visible en 16 direcciones hasta 3 km. Es un modelo, no una medida, y la ruta acumula su dosis tramo a tramo.
+**9 · The dose that reaches the ground (18 s).** Radiation layer.
+> We start from the 0.64 mSv per day measured by the RAD detector on Curiosity, about 100 times the natural dose on Earth. The dose drops where terrain blocks the sky and rises where there is less atmosphere overhead. We compute the visible sky in 16 directions out to 3 km. It is a model, not a measurement, and the route adds up its dose segment by segment.
 
-**10 · Al volante, sobre la ruta (22 s).** La cámara baja en vuelo hasta detrás del rover y arranca.
-> Es el modelo 3D oficial de Perseverance, a escala real. La suspensión rocker-bogie está simulada: cada rueda pisa el relieve y el microrrelieve del suelo, y vemos cabeceo y alabeo en directo. El rover vibra, levanta polvo y deja huellas. La línea del suelo es la trazada, coloreada por la pendiente.
+**10 · Behind the wheel, on the route (22 s).** The camera swoops down behind the rover and it starts driving.
+> This is NASA's official 3D model of Perseverance, at true scale. The rocker-bogie suspension is simulated: every wheel rides on the terrain and the ground's micro-relief, and we see pitch and roll live. The rover shakes, kicks up dust and leaves tracks. The line on the ground is the planned path, colored by slope.
 
-**11 · Desde la cámara del rover (13 s).** Vista POV.
-> Desde la Navcam del mástil. El suelo cercano es HiRISE a 25 cm con detalle procedimental y se regenera mientras avanzamos. El minimapa sitúa la ruta.
+**11 · Through the rover's camera (13 s).** POV view.
+> From the mast Navcam. The nearby ground is HiRISE at 25 cm with procedural detail, and it regenerates as we drive. The minimap shows where we are on the route.
 
-**12 · Un atardecer marciano (14 s).** La hora avanza hasta la puesta de sol.
-> El Sol se calcula para la latitud de Jezero. Al atardecer el cielo se vuelve azul alrededor del Sol: el polvo dispersa el azul hacia delante. Es al revés que en la Tierra.
+**12 · A Martian sunset (14 s).** Time of day advances to sunset.
+> The Sun is computed for Jezero's latitude. At sunset the sky turns blue around the Sun: dust scatters blue light forward. It is the opposite of Earth.
 
-**13 · ¿GO o NO-GO? (21 s).** Informe de misión en la ficha.
-> El informe reúne tiempo, autonomía, batería, pendientes, frío nocturno y la dosis acumulada frente al límite de carrera de NASA, 600 mSv. Da un veredicto GO, PRECAUCIÓN o NO-GO con sus motivos: es la respuesta para la tripulación.
+**13 · GO or NO-GO? (21 s).** Mission report in the side panel.
+> The report brings together time, range, battery, slopes, night cold and the accumulated dose against NASA's career limit of 600 mSv. It gives a GO, CAUTION or NO-GO verdict with the reasons: that is the answer for the crew.
 
-**14 · Gracias (12 s).** Vista general.
-> Capas de satélite, rutas A → B con tres alternativas, 3D con el rover y un informe de misión. Todo con datos abiertos y en el navegador. ¿Preguntas?
+**14 · Thank you (12 s).** Overview.
+> Satellite layers, A → B routes with three alternatives, 3D with the rover and a mission report. All on open data and all in the browser. Questions?
 
-## Si algo falla
+## If something goes wrong
 
-- **El 3D tarda en cargar:** la presentación espera hasta 6 s a la imagen del terreno y sigue. Se puede pausar con `Espacio` mientras carga.
-- **Sin conexión:** no hay teselas ni modelo 3D. Lleva un vídeo de respaldo grabado con la presentación en modo automático.
-- **Te saltas una escena:** cada escena prepara su propio estado (capas, ruta, vista), así que se puede ir adelante y atrás libremente.
+- **3D is slow to load:** the presentation waits up to 6 s for the terrain imagery and then carries on. You can pause with `Space` while it loads.
+- **No connection:** no tiles and no 3D model. Bring a backup video recorded with the presentation in automatic mode.
+- **You skip a scene:** each scene sets up its own state (layers, route, view), so you can go back and forth freely.

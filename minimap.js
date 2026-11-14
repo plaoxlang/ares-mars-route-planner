@@ -10,8 +10,8 @@ export function createMinimap({ host, texCanvas, toTex, fromTex, onPick }) {
   const el = document.createElement('div');
   el.className = 'minimap';
   el.innerHTML = `
-    <canvas width="${W}" height="${H}" aria-label="Minimapa de la ruta. Haz clic para ir a ese punto."></canvas>
-    <div class="minimap-foot"><span class="minimap-title">Mapa de la ruta</span><span class="minimap-scale mono"></span></div>`;
+    <canvas width="${W}" height="${H}" aria-label="Route minimap. Click to jump to that point."></canvas>
+    <div class="minimap-foot"><span class="minimap-title">Route map</span><span class="minimap-scale mono"></span></div>`;
   host.appendChild(el);
   const canvas = el.querySelector('canvas');
   const dpr = Math.min(2, window.devicePixelRatio || 1);

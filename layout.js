@@ -16,9 +16,9 @@ if (is3d) document.querySelector('.time-ctl').id = 'time-ctl'; // para tratarlo 
 
 const TOOLS = is3d
   ? [
-    { key: 'route', label: 'Ruta', blocks: ['plan-sec'] },
-    { key: 'view', label: 'Relieve', blocks: ['sec-view'] },
-    { key: 'time', label: 'Hora', blocks: ['time-ctl'] },
+    { key: 'route', label: 'Route', blocks: ['plan-sec'] },
+    { key: 'view', label: 'Relief', blocks: ['sec-view'] },
+    { key: 'time', label: 'Time', blocks: ['time-ctl'] },
     { key: 'info', label: 'Info', blocks: ['sec-routelegend', 'sec-method'] },
   ]
   : [
@@ -29,9 +29,9 @@ const TOOLS = is3d
 // Mueve los mismos controles (radios e interruptores con sus eventos) a una tira de miniaturas.
 const layerbar = document.createElement('section');
 layerbar.className = 'layerbar';
-layerbar.setAttribute('aria-label', 'Capas del mapa');
-layerbar.innerHTML = `<div class="lb-head"><span class="lb-title">Capas</span><b class="lb-active"></b>
-  <button type="button" class="lb-toggle" aria-expanded="true" aria-label="Ocultar capas" title="Ocultar o mostrar las capas">
+layerbar.setAttribute('aria-label', 'Map layers');
+layerbar.innerHTML = `<div class="lb-head"><span class="lb-title">Layers</span><b class="lb-active"></b>
+  <button type="button" class="lb-toggle" aria-expanded="true" aria-label="Hide layers" title="Hide or show layers">
   <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M2 8l4-4 4 4" fill="none" stroke="currentColor" stroke-width="1.5"/></svg></button></div>
   <div class="lb-fold"><div><div class="lb-body"></div><div class="lb-legends"></div></div></div>`;
 const lbBody = layerbar.querySelector('.lb-body');
@@ -56,12 +56,12 @@ const lbToggle = layerbar.querySelector('.lb-toggle');
 lbToggle.addEventListener('click', () => {
   const open = layerbar.classList.toggle('collapsed') === false;
   lbToggle.setAttribute('aria-expanded', String(open));
-  lbToggle.setAttribute('aria-label', open ? 'Ocultar capas' : 'Mostrar capas');
+  lbToggle.setAttribute('aria-label', open ? 'Hide layers' : 'Show layers');
 });
 
 const bar = document.createElement('nav');
 bar.className = 'dock-tools';
-bar.setAttribute('aria-label', 'Herramientas');
+bar.setAttribute('aria-label', 'Tools');
 dock.prepend(bar);
 
 const items = [];
@@ -92,7 +92,7 @@ for (const tool of TOOLS) {
   const pop = document.createElement('div');
   pop.className = `dock-pop dock-pop-${tool.key}${tool.side ? ' dock-pop-side' : ''}`;
   pop.hidden = true;
-  pop.innerHTML = `<div class="dock-pop-head"><h3 class="dock-pop-title">${tool.label}</h3>${tool.side ? '<button type="button" class="dock-pop-close" aria-label="Cerrar">Cerrar</button>' : ''}</div>`;
+  pop.innerHTML = `<div class="dock-pop-head"><h3 class="dock-pop-title">${tool.label}</h3>${tool.side ? '<button type="button" class="dock-pop-close" aria-label="Close">Close</button>' : ''}</div>`;
   tool.blocks.forEach((id) => { if ($(id)) pop.append($(id)); });
   bar.append(btn);
   stage.append(pop);
@@ -126,7 +126,7 @@ const val = (key) => bar.querySelector(`[data-tool="${key}"] .dock-val`);
 const checkedName = (sel) => document.querySelector(sel)?.closest('label')?.querySelector('.name')?.textContent ?? '';
 function sync() {
   if (is3d) {
-    val('route').textContent = 'Mi ruta';
+    val('route').textContent = 'My route';
     layerbar.querySelector('.lb-active').textContent = checkedName('#layer input:checked');
     val('view').textContent = $('exag-label').textContent;
     val('time').textContent = $('hour-label').textContent;

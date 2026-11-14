@@ -22,13 +22,13 @@ const wait0 = (ms) => new Promise((r) => { setTimeout(r, ms); });
 // points: lo que ve el público · notes: lo que puede decir el presentador · run: la acción en pantalla
 const SCENES = [
   {
-    page: '2d', dur: 13000, kicker: 'ARES', title: 'Planificar una travesía en Marte',
+    page: '2d', dur: 13000, kicker: 'ARES', title: 'Planning a drive across Mars',
     points: [
-      'Una tripulación en Marte necesita saber por dónde ir, cuánto tardará y qué riesgos corre.',
-      'ARES lo responde sobre el relieve real del cráter Jezero, con datos abiertos de NASA y USGS.',
+      'A crew on Mars needs to know where to go, how long it will take and what risks they face.',
+      'ARES answers that on the real terrain of Jezero Crater, using open NASA and USGS data.',
     ],
-    chips: [['Jezero', '18,4° N · 77,4° E'], ['19 × 9 km', 'zona de estudio'], ['100 %', 'en el navegador']],
-    notes: 'Presentamos el problema: planificar una salida segura. Jezero es donde aterrizó Perseverance en 2021; fue un lago hace 3.500 millones de años.',
+    chips: [['Jezero', '18.4° N · 77.4° E'], ['19 × 9 km', 'study area'], ['100%', 'in the browser']],
+    notes: 'Set up the problem: planning a safe traverse. Jezero is where Perseverance landed in 2021; it was a lake 3.5 billion years ago.',
     async run(c) {
       const { api } = c;
       api.planner.clear();
@@ -41,20 +41,20 @@ const SCENES = [
     },
   },
   {
-    page: '2d', dur: 18000, kicker: 'Capas', title: 'Lo que ven los satélites',
+    page: '2d', dur: 18000, kicker: 'Layers', title: 'What the orbiters see',
     points: [
-      'Debajo, siempre MOLA: altimetría láser de Mars Global Surveyor, de todo el planeta (463 m/px).',
-      'CTX, de Mars Reconnaissance Orbiter: toda la zona a 6 m/px.',
-      'HiRISE: la cámara más potente en órbita, 25 cm/px. Se distinguen rocas de un metro.',
+      'Always underneath: MOLA, laser altimetry of the whole planet from Mars Global Surveyor (463 m/px).',
+      'CTX, from Mars Reconnaissance Orbiter: the whole area at 6 m/px.',
+      'HiRISE: the most powerful camera in orbit, 25 cm/px. You can make out one-meter boulders.',
     ],
     chips: [['463 m/px', 'MOLA'], ['6 m/px', 'CTX'], ['25 cm/px', 'HiRISE']],
-    notes: 'Las capas están siempre a la vista arriba a la izquierda, una cada vez sobre el relieve MOLA. Vamos acercándonos y cambiando de satélite: cada uno ve más detalle.',
+    notes: 'The layers are always in view at the top left, one at a time over the MOLA terrain. We zoom in and switch orbiters: each one sees finer detail.',
     async run(c) {
       const { api } = c;
       api.planner.clear(); // también descarta un cálculo en curso
       c.layers(true);
       api.setLayer('ctx');
-      c.spot('.layerbar', 'Capas');
+      c.spot('.layerbar', 'Layers');
       api.map.setView([18.44, 77.38], 7, { animate: false });
       await c.wait(3500);
       api.flyTo(18.47, 77.33, 13, 2.5);
@@ -65,53 +65,53 @@ const SCENES = [
     },
   },
   {
-    page: '2d', dur: 18000, kicker: 'Relieve', title: 'Altura y pendiente, calculadas aquí',
+    page: '2d', dur: 18000, kicker: 'Terrain', title: 'Elevation and slope, computed right here',
     points: [
-      'Modelo digital del terreno de 20 m (USGS), hecho con pares estéreo de CTX para guiar el aterrizaje.',
-      'La pendiente es el gradiente de ese modelo, a escala de ~60 m, calculado en el navegador.',
-      'Verde < 8° · ámbar 8–15° · rojo > 15°: los mismos umbrales en toda la app.',
+      '20 m digital terrain model (USGS), built from CTX stereo pairs to guide the landing.',
+      'Slope is the gradient of that model at a ~60 m scale, computed in the browser.',
+      'Green < 8° · amber 8–15° · red > 15°: the same thresholds across the whole app.',
     ],
-    chips: [['20 m', 'por celda'], ['460.000', 'celdas'], ['+600 m', 'del fondo al borde']],
-    notes: 'Todo lo que viene después (rutas, riesgos, 3D) sale de este modelo del terreno. Las capas se calculan en el propio navegador a partir de los datos crudos.',
+    chips: [['20 m', 'per cell'], ['460,000', 'cells'], ['+600 m', 'floor to rim']],
+    notes: 'Everything that follows (routes, risks, 3D) comes from this terrain model. The layers are computed in the browser itself from the raw data.',
     async run(c) {
       const { api } = c;
       api.planner.clear(); // también descarta un cálculo en curso
       c.layers(true);
       api.setLayer('elev');
-      c.spot('.layerbar', 'Altura');
+      c.spot('.layerbar', 'Elevation');
       api.fit(boundsOf(api.demBounds), 2);
       await c.wait(7500);
       api.setLayer('slope');
-      c.spot('.layerbar', 'Pendiente');
+      c.spot('.layerbar', 'Slope');
       await c.wait(6000);
     },
   },
   {
-    page: '2d', dur: 13000, kicker: 'Frío nocturno', title: 'Dónde aprieta el frío de noche',
+    page: '2d', dur: 13000, kicker: 'Night cold', title: 'Where the night bites hardest',
     points: [
-      'Infrarrojo nocturno de THEMIS (Mars Odyssey): la arena y el polvo pierden el calor antes que la roca.',
-      'Damos un valor relativo, "más frío que el X % de la zona", no grados: no hay temperatura medida en cada punto.',
+      'Nighttime infrared from THEMIS (Mars Odyssey): sand and dust lose their heat faster than rock.',
+      'We give a relative value, "colder than X% of the area", not degrees: there is no measured temperature at every point.',
     ],
-    chips: [['100 m/px', 'THEMIS noche'], ['percentil', 'relativo']],
-    notes: 'Somos honestos con el dato: la temperatura absoluta solo la mide la estación MEDA en unos pocos soles. Lo que sí sabemos es qué zonas se enfrían más.',
+    chips: [['100 m/px', 'THEMIS night'], ['percentile', 'relative']],
+    notes: 'We are honest about the data: absolute temperature is only measured by the MEDA weather station, on a handful of sols. What we do know is which areas cool down the most.',
     async run(c) {
       const { api } = c;
       api.planner.clear(); // también descarta un cálculo en curso
       c.layers(true);
       api.setLayer('cold');
-      c.spot('.layerbar', 'Frío nocturno');
+      c.spot('.layerbar', 'Night cold');
       await c.wait(9000);
     },
   },
   {
-    page: '2d', dur: 24000, kicker: 'Ruta por puntos', title: 'Clic en A, clic en B',
+    page: '2d', dur: 24000, kicker: 'Route by points', title: 'Click A, click B',
     points: [
-      'Se marca el origen y el destino en el mapa: las rutas se calculan al momento.',
-      'Algoritmo A* sobre las 460.000 celdas de 20 m, en 8 direcciones.',
-      'Tres alternativas a la vez, cada una en su propio hilo (Web Workers).',
+      'Mark the start and the destination on the map: the routes are computed instantly.',
+      'A* search over all 460,000 cells of 20 m, in 8 directions.',
+      'Three alternatives at once, each on its own thread (Web Workers).',
     ],
-    chips: [['A → B', 'delta → borde del cráter'], ['…', 'tiempo de cálculo']],
-    notes: 'Vamos del delta del antiguo río al borde oeste del cráter: casi 6 km y más de 600 m de subida. El vehículo es un rover presurizado tipo SEV de NASA.',
+    chips: [['A → B', 'delta → crater rim'], ['…', 'compute time']],
+    notes: 'We go from the ancient river delta to the western crater rim: almost 6 km and over 600 m of climb. The vehicle is a NASA SEV-type pressurized rover.',
     async run(c) {
       const { api } = c;
       api.setLayer('hirise');
@@ -127,22 +127,22 @@ const SCENES = [
       await c.click(api.toScreen(dest.lat, dest.lon), 'B');
       api.planner.setPoint('dest', dest.lat, dest.lon);
       await Promise.race([result, c.wait(6000)]);
-      const ms = /(\d[\d.]*) ms/.exec(document.getElementById('plan-status')?.textContent ?? '')?.[1];
-      c.setChips([['A → B', 'delta → borde del cráter'], [ms ? `${ms} ms` : '<1 s', '3 rutas calculadas']]);
+      const ms = /(\d[\d.,]*) ms/.exec(document.getElementById('plan-status')?.textContent ?? '')?.[1];
+      c.setChips([['A → B', 'delta → crater rim'], [ms ? `${ms} ms` : '<1 s', '3 routes computed']]);
       fitRoutes(api);
-      c.spot('#plan-routes-sec', 'Alternativas');
+      c.spot('#plan-routes-sec', 'Alternatives');
       await c.wait(4000);
     },
   },
   {
-    page: '2d', dur: 21000, kicker: 'Alternativas', title: 'Rápida, segura o eficiente',
+    page: '2d', dur: 21000, kicker: 'Alternatives', title: 'Fast, safe or efficient',
     points: [
-      'Más rápida: menos tiempo. La velocidad baja con la pendiente y el terreno irregular.',
-      'Más segura: penaliza las pendientes y la rugosidad, aunque sea más larga.',
-      'Menos energía: rodadura y subir 3.000 kg de vehículo. Nunca por encima de 18°.',
+      'Fastest: least time. Speed drops with slope and rough terrain.',
+      'Safest: penalizes slopes and roughness, even if it ends up longer.',
+      'Least energy: rolling resistance plus hauling 3,000 kg of vehicle uphill. Never above 18°.',
     ],
     chips: [],
-    notes: 'Como en Google Maps: la seleccionada en azul y las demás en gris. Cada tarjeta da tiempo, distancia, desnivel, pendiente máxima y batería.',
+    notes: 'Just like Google Maps: the selected route in blue, the others in gray. Each card shows time, distance, elevation gain, max slope and battery.',
     async run(c) {
       const { api } = c;
       c.layers(false);
@@ -155,7 +155,7 @@ const SCENES = [
         if (k < 0) continue;
         api.planner.selectRoute(k);
         const r = api.planner.routes[k];
-        c.setChips([[formatHours(r.hours), r.labels.join(' · ')], [fmt.km(r.distance_m), 'distancia'], [`${num(r.max_slope_deg, 1)}°`, 'pendiente máx.']]);
+        c.setChips([[formatHours(r.hours), r.labels.join(' · ')], [fmt.km(r.distance_m), 'distance'], [`${num(r.max_slope_deg, 1)}°`, 'max slope']]);
         await c.wait(80);
         c.spot(cards()[k], r.labels.join(' · '));
         await c.wait(5600);
@@ -166,19 +166,19 @@ const SCENES = [
     },
   },
   {
-    page: '2d', dur: 10000, kicker: 'Reproducir', title: 'La ruta, minuto a minuto',
+    page: '2d', dur: 10000, kicker: 'Playback', title: 'The route, minute by minute',
     points: [
-      'El perfil de abajo es la barra de tiempo: altura de la ruta coloreada por pendiente.',
-      'T+ es el reloj de la misión; la ficha de la izquierda sigue al vehículo.',
+      'The profile at the bottom is the timeline: route elevation, colored by slope.',
+      'T+ is the mission clock; the panel on the left follows the vehicle.',
     ],
     chips: [],
-    notes: 'Ahora pasamos a 3D con esta misma ruta.',
+    notes: 'Now we jump to 3D with this same route.',
     async run(c) {
       const { api } = c;
       c.layers(false);
       await ensureRoute(c);
       const pl = api.planDock?.player;
-      c.spot('.dock', 'Barra de tiempo');
+      c.spot('.dock', 'Timeline');
       if (pl) { pl.seek(0); pl.setRate(pl.total * 3600 / 9); pl.play(); }
       await c.wait(8500);
       pl?.pause();
@@ -186,14 +186,14 @@ const SCENES = [
     },
   },
   {
-    page: '3d', dur: 18000, kicker: 'Terreno 3D', title: 'El relieve real, en 3D',
+    page: '3d', dur: 18000, kicker: '3D terrain', title: 'The real terrain, in 3D',
     points: [
-      'La malla es el modelo del terreno de 20 m, con la altura exagerada ×2 para leerlo mejor.',
-      'El rectángulo blanco es nuestra zona de estudio. Fuera, relieve MOLA e imagen desenfocada.',
-      'Se navega como un mapa: arrastrar, girar y acercar.',
+      'The mesh is the 20 m terrain model, with elevation exaggerated ×2 so it reads better.',
+      'The white rectangle is our study area. Outside it: MOLA terrain and blurred imagery.',
+      'It navigates like a map: drag, rotate and zoom.',
     ],
-    chips: [['×2', 'exageración'], ['19 × 9 km', 'zona'], ['MOLA', 'alrededor']],
-    notes: 'Todo se dibuja en el navegador con Three.js. La ruta azul es la que acabamos de calcular.',
+    chips: [['×2', 'exaggeration'], ['19 × 9 km', 'area'], ['MOLA', 'surroundings']],
+    notes: 'Everything is rendered in the browser with Three.js. The blue route is the one we just computed.',
     async run(c) {
       const { api } = c;
       api.preloadRover?.();
@@ -206,34 +206,34 @@ const SCENES = [
     },
   },
   {
-    page: '3d', dur: 18000, kicker: 'Radiación', title: 'La dosis que llega al suelo',
+    page: '3d', dur: 18000, kicker: 'Radiation', title: 'The dose that reaches the ground',
     points: [
-      'Punto de partida: 0,64 mSv/día medidos por el detector RAD de Curiosity.',
-      'Menos dosis donde el relieve tapa cielo (valles); más donde hay menos atmósfera encima (zonas altas).',
-      'Es un modelo, no una medida. La ruta acumula su dosis tramo a tramo.',
+      'Starting point: 0.64 mSv/day, measured by the RAD detector on Curiosity.',
+      'Lower dose where terrain blocks the sky (valleys); higher where there is less atmosphere overhead (high ground).',
+      'It is a model, not a measurement. The route adds up its dose segment by segment.',
     ],
     chips: [],
-    notes: 'Marte no tiene campo magnético global y su atmósfera es muy fina: unas 100 veces la dosis natural en la Tierra. Calculamos el cielo visible en 16 direcciones hasta 3 km.',
+    notes: 'Mars has no global magnetic field and a very thin atmosphere: about 100 times the natural dose on Earth. We compute the visible sky in 16 directions out to 3 km.',
     async run(c) {
       const { api } = c;
       setup3d(c, { layer: 'rad', exag: 2, hour: 16 });
       const r = api.radiation();
-      c.setChips([[`${num(r.min, 2)}–${num(r.max, 2)}`, 'mSv/día en la zona'], ['≈100×', 'la dosis en la Tierra']]);
-      c.spot('.layerbar', 'Radiación');
+      c.setChips([[`${num(r.min, 2)}–${num(r.max, 2)}`, 'mSv/day across the area'], ['≈100×', 'the dose on Earth']]);
+      c.spot('.layerbar', 'Radiation');
       const mid = routeMid(api);
       await c.fly(c.around(mid, { dist: 9000, elev: 38, az: 200 }), mid, 3500);
       await c.orbit(mid, { dist: 9000, elev: 38, az: [200, 250] }, 12000);
     },
   },
   {
-    page: '3d', dur: 22000, kicker: 'Rover', title: 'Al volante, sobre la ruta',
+    page: '3d', dur: 22000, kicker: 'Rover', title: 'Behind the wheel, on the route',
     points: [
-      'Modelo 3D oficial de Perseverance (NASA), a escala real.',
-      'Suspensión rocker-bogie simulada: cada rueda se apoya en el relieve; cabeceo y alabeo en directo.',
-      'Las ruedas pisan el microrrelieve: el cuerpo vibra, levanta polvo y deja huellas.',
+      'Official NASA 3D model of Perseverance, at true scale.',
+      'Simulated rocker-bogie suspension: every wheel rests on the terrain; live pitch and roll.',
+      'The wheels ride over micro-relief: the body shakes, kicks up dust and leaves tracks.',
     ],
-    chips: [['1:1', 'escala real'], ['6', 'ruedas apoyadas'], ['0,2 s', 'para entrar al coche']],
-    notes: 'La cámara baja en vuelo hasta detrás del rover. El modelo es el rover robótico de NASA; el vehículo de la misión es presurizado, pero sirve para ver cómo se mueve sobre este terreno. Todo está precargado: entrar al coche es inmediato.',
+    chips: [['1:1', 'true scale'], ['6', 'wheels on the ground'], ['0.2 s', 'to take the wheel']],
+    notes: 'The camera swoops down behind the rover. The model is NASA\'s robotic rover; the mission vehicle is pressurized, but it shows how a vehicle moves over this terrain. Everything is preloaded, so taking the wheel is instant.',
     async run(c) {
       const { api } = c;
       setup3d(c, { layer: 'sat', hour: 16, keepDrive: true });
@@ -241,36 +241,36 @@ const SCENES = [
       pl?.pause();
       pl?.seek(pl.total * 0.12);
       await api.enterDrive('chase');
-      c.spot('.drive-hud', 'Telemetría');
+      c.spot('.drive-hud', 'Telemetry');
       pl?.play();
       await c.wait(19000);
     },
   },
   {
-    page: '3d', dur: 13000, kicker: 'POV', title: 'Desde la cámara del rover',
+    page: '3d', dur: 13000, kicker: 'POV', title: 'Through the rover\'s camera',
     points: [
-      'Vista desde la Navcam del mástil, con el brazo robótico delante.',
-      'El suelo cercano es HiRISE a 25 cm/px con detalle procedimental; el minimapa sitúa la ruta.',
+      'View from the mast Navcam, with the robotic arm in front.',
+      'The nearby ground is HiRISE at 25 cm/px plus procedural detail; the minimap shows where you are on the route.',
     ],
-    chips: [['25 cm/px', 'HiRISE'], ['360 m', 'suelo detallado']],
-    notes: 'El suelo detallado se regenera alrededor del rover mientras avanza, sin tirones.',
+    chips: [['25 cm/px', 'HiRISE'], ['360 m', 'detailed ground']],
+    notes: 'The detailed ground regenerates around the rover as it drives, with no stutter.',
     async run(c) {
       const { api } = c;
       setup3d(c, { hour: 16, keepDrive: true });
       await api.enterDrive('pov');
-      c.spot('.minimap', 'Minimapa');
+      c.spot('.minimap', 'Minimap');
       if (!api.planDock?.player.playing) api.planDock?.player.play();
       await c.wait(11000);
     },
   },
   {
-    page: '3d', dur: 14000, kicker: 'Luz', title: 'Un atardecer marciano',
+    page: '3d', dur: 14000, kicker: 'Light', title: 'A Martian sunset',
     points: [
-      'El Sol se calcula para la latitud de Jezero y la hora elegida.',
-      'Al atardecer el cielo se vuelve azul alrededor del Sol: el polvo dispersa el azul hacia delante.',
+      'The Sun is computed for Jezero\'s latitude and the chosen time of day.',
+      'At sunset the sky turns blue around the Sun: dust scatters blue light forward.',
     ],
-    chips: [['18,4° N', 'latitud'], ['azul', 'atardecer']],
-    notes: 'Es lo contrario que en la Tierra: de día el cielo es color caramelo y el atardecer es azul.',
+    chips: [['18.4° N', 'latitude'], ['blue', 'sunset']],
+    notes: 'It is the opposite of Earth: the daytime sky is butterscotch and the sunset is blue.',
     async run(c) {
       const { api } = c;
       setup3d(c, { keepDrive: true });
@@ -280,37 +280,37 @@ const SCENES = [
     },
   },
   {
-    page: '3d', dur: 21000, kicker: 'Informe de misión', title: '¿GO o NO-GO?',
+    page: '3d', dur: 21000, kicker: 'Mission report', title: 'GO or NO-GO?',
     points: [
-      'Reúne tiempo, autonomía, batería, pendientes, frío nocturno y dosis de toda la ruta.',
-      'Dosis acumulada frente al límite de carrera de NASA (600 mSv).',
-      'Veredicto GO / PRECAUCIÓN / NO-GO con sus motivos.',
+      'Brings together time, range, battery, slopes, night cold and dose for the whole route.',
+      'Accumulated dose against NASA\'s career limit (600 mSv).',
+      'A GO / CAUTION / NO-GO verdict, with the reasons.',
     ],
     chips: [],
-    notes: 'Es la respuesta final para la tripulación: si se puede hacer la ruta con este vehículo y volver para contarlo.',
+    notes: 'This is the bottom line for the crew: can they drive this route with this vehicle and come back to tell the tale.',
     async run(c) {
       const { api } = c;
       setup3d(c, { layer: 'sat', exag: 2, hour: 16 });
       const rep = api.mission();
-      c.setChips([[rep.verdict, 'veredicto'], [`${num(rep.dose, 2)} mSv`, 'dosis de la ruta'], [rep.batteryUse !== null ? `${num(rep.batteryUse * 100)} %` : '—', 'batería']]);
+      c.setChips([[rep.verdict, 'verdict'], [`${num(rep.dose, 2)} mSv`, 'route dose'], [rep.batteryUse !== null ? `${num(rep.batteryUse * 100)}%` : '—', 'battery']]);
       api.frameRoute();
       await c.wait(400);
       const el = document.querySelector('.float-right .mission');
       el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
       await c.wait(700);
-      c.spot(el, 'Informe');
+      c.spot(el, 'Report');
       const mid = routeMid(api);
       await c.orbit(mid, { dist: 7000, elev: 40, az: [190, 230] }, 17000);
     },
   },
   {
-    page: '3d', dur: 12000, kicker: 'ARES', title: 'Gracias',
+    page: '3d', dur: 12000, kicker: 'ARES', title: 'Thank you',
     points: [
-      'Capas de satélite, rutas A → B con tres alternativas, 3D con el rover y un informe de misión.',
-      'Todo con datos abiertos de NASA y USGS, y todo corre en el navegador.',
+      'Satellite layers, A → B routes with three alternatives, 3D with the rover and a mission report.',
+      'All built on open NASA and USGS data, and all running in the browser.',
     ],
-    chips: [['NASA', 'MRO · MGS · Odyssey · Mars 2020'], ['USGS', 'modelo del terreno'], ['0', 'servidores propios']],
-    notes: 'Cierre y preguntas. Se puede seguir explorando libremente.',
+    chips: [['NASA', 'MRO · MGS · Odyssey · Mars 2020'], ['USGS', 'terrain model'], ['0', 'servers of our own']],
+    notes: 'Wrap up and take questions. The app stays open for free exploration.',
     final: true,
     async run(c) {
       const { api } = c;
@@ -382,17 +382,17 @@ function openStart(page) {
   const total = SCENES.reduce((a, s) => a + s.dur, 0);
   const el = document.createElement('div');
   el.className = 'pres-start';
-  el.innerHTML = `<div class="pres-start-box" role="dialog" aria-modal="true" aria-label="Presentación">
-      <span class="pres-kicker">Presentación · ${SCENES.length} escenas · ~${Math.round(total / 60000)} min</span>
-      <h2>ARES en cuatro minutos</h2>
-      <p>Capas, ruta punto a punto, alternativas, terreno 3D con el rover, radiación, luz y el informe de misión.
-        Pasa del mapa al 3D sola.</p>
+  el.innerHTML = `<div class="pres-start-box" role="dialog" aria-modal="true" aria-label="Presentation">
+      <span class="pres-kicker">Presentation · ${SCENES.length} scenes · ~${Math.round(total / 60000)} min</span>
+      <h2>ARES in four minutes</h2>
+      <p>Layers, point-to-point routing, alternatives, 3D terrain with the rover, radiation, light and the mission report.
+        It moves from the map to 3D on its own.</p>
       <div class="pres-start-btns">
-        <button class="btn primary" type="button" data-mode="auto">Automática</button>
-        <button class="btn" type="button" data-mode="manual">Paso a paso</button>
-        <button class="btn pres-cancel" type="button" data-mode="cancel">Cancelar</button>
+        <button class="btn primary" type="button" data-mode="auto">Automatic</button>
+        <button class="btn" type="button" data-mode="manual">Step by step</button>
+        <button class="btn pres-cancel" type="button" data-mode="cancel">Cancel</button>
       </div>
-      <p class="pres-keys"><b>→</b> / <b>Av Pág</b> siguiente · <b>←</b> anterior · <b>Espacio</b> pausa o avanza · <b>A</b> cambia de modo · <b>N</b> notas · <b>Esc</b> salir</p>
+      <p class="pres-keys"><b>→</b> / <b>Page Down</b> next · <b>←</b> back · <b>Space</b> pause or advance · <b>A</b> switch mode · <b>N</b> notes · <b>Esc</b> exit</p>
     </div>`;
   document.body.append(el);
   el.querySelector('[data-mode="auto"]').focus();
@@ -600,14 +600,14 @@ function buildUI(show) {
       <div class="pres-chips"></div>
       <p class="pres-notes" hidden></p>
       <div class="pres-ctrl">
-        <button class="pres-btn" data-act="prev" aria-label="Escena anterior">${ICONS.prev}</button>
-        <button class="pres-btn" data-act="pause" aria-label="Pausar">${ICONS.pause}</button>
-        <button class="pres-btn" data-act="next" aria-label="Escena siguiente">${ICONS.next}</button>
-        <button class="pres-mode" data-act="mode" title="Cambiar de modo (A)"></button>
-        <span class="pres-wait" hidden>→ siguiente</span>
+        <button class="pres-btn" data-act="prev" aria-label="Previous scene">${ICONS.prev}</button>
+        <button class="pres-btn" data-act="pause" aria-label="Pause">${ICONS.pause}</button>
+        <button class="pres-btn" data-act="next" aria-label="Next scene">${ICONS.next}</button>
+        <button class="pres-mode" data-act="mode" title="Switch mode (A)"></button>
+        <span class="pres-wait" hidden>→ next</span>
         <span class="pres-spacer"></span>
-        <button class="pres-mode" data-act="notes" title="Notas del presentador (N)">Notas</button>
-        <button class="pres-mode" data-act="exit" title="Salir (Esc)">Salir</button>
+        <button class="pres-mode" data-act="notes" title="Speaker notes (N)">Notes</button>
+        <button class="pres-mode" data-act="exit" title="Exit (Esc)">Exit</button>
       </div>
     </section>
     <div class="pres-cover" hidden><span class="pres-kicker"></span><h2></h2></div>`;
@@ -648,7 +648,7 @@ function buildUI(show) {
       root.hidden = false;
       const c = $q('.pres-cover');
       c.hidden = false;
-      c.querySelector('.pres-kicker').textContent = sc.page === '3d' ? 'Pasamos al 3D' : 'Volvemos al mapa';
+      c.querySelector('.pres-kicker').textContent = sc.page === '3d' ? 'Switching to 3D' : 'Back to the map';
       c.querySelector('h2').textContent = sc.title;
     },
     scene(i, sc) {
@@ -714,11 +714,11 @@ function buildUI(show) {
     paused(p) {
       const b = $q('[data-act="pause"]');
       b.innerHTML = p ? ICONS.play : ICONS.pause;
-      b.setAttribute('aria-label', p ? 'Continuar' : 'Pausar');
+      b.setAttribute('aria-label', p ? 'Resume' : 'Pause');
       root.classList.toggle('is-paused', p);
     },
     mode(m) {
-      $q('[data-act="mode"]').textContent = m === 'auto' ? 'Auto' : 'Paso a paso';
+      $q('[data-act="mode"]').textContent = m === 'auto' ? 'Auto' : 'Step by step';
       $q('[data-act="pause"]').hidden = m !== 'auto';
       $q('.pres-wait').hidden = !(waiting && m === 'manual');
     },

@@ -2,7 +2,7 @@
 import { num, fmt, buildProfile, setPlayButton } from './shared.js';
 
 export const PLAN_COLOR = '#4ea1ff';
-const KEY = 'ares:plan';
+const KEY = 'ares:plan:en'; // :en → las rutas guardadas antes de traducir la interfaz (etiquetas en español) se ignoran
 
 // La ruta elegida se guarda en el navegador para que la otra vista la pueda mostrar.
 export function savePlan(plan) {
@@ -85,14 +85,19 @@ export class RoutePlayer {
   }
   seekIndex(i) { this.seek(this.route.hours[i]); }
 
-  play() {
+  // ramp (ms): arranca suave y llega a la velocidad normal en ese tiempo (sin tirón al empezar)
+  play({ ramp = 0 } = {}) {
     if (this.t >= this.total) this.t = 0;
     this.playing = true;
     this.onState?.(true);
     let last = null;
+    let t0 = null;
     const loop = (now) => {
       if (!this.playing) return;
-      if (last !== null) this.t += (Math.min(250, now - last) / this.duration) * this.total;
+      t0 ??= now;
+      const k = ramp > 0 ? Math.min(1, (now - t0) / ramp) : 1;
+      const speed = k * k * (3 - 2 * k); // aceleración suave
+      if (last !== null) this.t += ((Math.min(250, now - last) / this.duration) * this.total) * speed;
       last = now;
       if (this.t > this.maxT) this.maxT = Math.min(this.total, this.t);
       if (this.t >= this.total) {
@@ -131,7 +136,7 @@ export function mountPlanDock({ wrap, route, colorAt, playBtn, labelEl, subEl, o
       profile.mark(s.idx);
       if (player) profile.done(player.sample(player.maxT).idx);
       labelEl.textContent = clock(s.t);
-      subEl.textContent = `${fmt.km(s.dist)} de ${fmt.km(total)} · ${fmt.m(s.elev)} · ×${num(player.speedup)}`;
+      subEl.textContent = `${fmt.km(s.dist)} of ${fmt.km(total)} · ${fmt.m(s.elev)} · ×${num(player.speedup)}`;
       onSample(s);
     },
     onState: (p) => {
@@ -139,8 +144,8 @@ export function mountPlanDock({ wrap, route, colorAt, playBtn, labelEl, subEl, o
       // Botones "Reproducir" de los paneles: mismo estado que el play de la barra
       document.querySelectorAll('[data-act="play"], [data-plan="play"]').forEach((b) => {
         const label = b.lastChild;
-        if (label?.nodeType === Node.TEXT_NODE) label.textContent = p ? 'Pausar' : 'Reproducir';
-        else b.textContent = p ? 'Pausar' : 'Reproducir';
+        if (label?.nodeType === Node.TEXT_NODE) label.textContent = p ? 'Pause' : 'Play';
+        else b.textContent = p ? 'Pause' : 'Play';
       });
       onState?.(p);
     },
@@ -163,11 +168,11 @@ export function renderPlanStats(el, plan) {
   if (!plan) { el.innerHTML = ''; return; }
   const st = plan.stats;
   const items = [
-    [fmt.km(st.distance_m), 'Recorrido'],
-    [formatHours(st.hours), 'Tiempo estimado'],
-    [`+${num(st.ascent_m)} m`, 'Subida'],
-    [`${num(st.max_slope_deg, 1)}°`, 'Pendiente máx.'],
-    [plan.labels.join(' · '), 'Alternativa'],
+    [fmt.km(st.distance_m), 'Distance'],
+    [formatHours(st.hours), 'Estimated time'],
+    [`+${num(st.ascent_m)} m`, 'Ascent'],
+    [`${num(st.max_slope_deg, 1)}°`, 'Max slope'],
+    [plan.labels.join(' · '), 'Option'],
   ];
   el.innerHTML = items.map(([v, l], k) => `<div class="stat" style="--i:${k}"><b>${v}</b><span>${l}</span></div>`).join('');
 }

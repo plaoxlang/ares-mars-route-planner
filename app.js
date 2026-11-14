@@ -83,7 +83,7 @@ const OVERLAYS = {
     trekLayer(SITE.tiles.ctxWide, { attribution: 'MRO CTX' }),
     trekLayer(SITE.tiles.ctx),
   ]),
-  hirise: trekLayer(SITE.tiles.hirise, { attribution: 'MRO HiRISE (controlado)' }),
+  hirise: trekLayer(SITE.tiles.hirise, { attribution: 'MRO HiRISE (controlled)' }),
   cold: new ColdLayer({ maxNativeZoom: THEMIS_NIGHT.z, maxZoom: 19, opacity: 0.72, attribution: 'MO THEMIS (ASU)' }),
   // elev y slope se crean al cargar el DTM
 };
@@ -130,7 +130,7 @@ const wide = () => window.innerWidth > 900; // en escritorio la ficha ocupa la i
 map.fitBounds(demBounds, wide() ? { paddingTopLeft: [30, 90], paddingBottomRight: [30, 30] } : { padding: [10, 10] });
 
 $('cold-legend').innerHTML = `<div class="ramp" style="background:linear-gradient(to right,${rampCss(COLD_RAMP)})"></div>
-  <div class="ramp-labels"><span>más frío de noche</span><span>más templado</span></div>`;
+  <div class="ramp-labels"><span>colder at night</span><span>warmer</span></div>`;
 
 // ---------- Capas: una sola a la vez sobre MOLA ----------
 // HiRISE no cubre toda la zona: lleva CTX debajo para que no queden huecos.
@@ -165,7 +165,7 @@ function setDockMode() {
     Object.values(planVehicle).forEach((l) => l.remove());
     setPlayButton($('play'), false);
     $('slider-label').textContent = '—';
-    $('readout-sub').textContent = 'Marca A y B en el mapa';
+    $('readout-sub').textContent = 'Mark A and B on the map';
     renderEmptyHero();
     return;
   }
@@ -203,21 +203,21 @@ function renderPlanHero(plan, s) {
   const sat = satAt(s.lon, s.lat);
   renderHero($('insp-hero'), {
     img: sat.css,
-    caption: `${sat.caption} · posición del vehículo`,
-    title: 'Mi ruta',
+    caption: `${sat.caption} · vehicle position`,
+    title: 'My route',
     meta: `${plan.labels.join(' · ')} · ${plan.vehicleName}`,
     meta2: `${clock(s.t)} · ${latLon({ lat: s.lat, lon: s.lon })}`,
-    from: `A · ${plan.origin.name ?? 'origen'}`,
-    to: `B · ${plan.dest.name ?? 'destino'}`,
+    from: `A · ${plan.origin.name ?? 'origin'}`,
+    to: `B · ${plan.dest.name ?? 'destination'}`,
     frac: s.dist / (plan.dist.at(-1) || 1),
-    left: `${fmt.km(s.dist)} de ${fmt.km(plan.dist.at(-1))}`,
-    right: `llegada en ${formatHours(Math.max(0, plan.hours.at(-1) - s.t))}`,
+    left: `${fmt.km(s.dist)} of ${fmt.km(plan.dist.at(-1))}`,
+    right: `arrival in ${formatHours(Math.max(0, plan.hours.at(-1) - s.t))}`,
   });
 }
 function renderEmptyHero() {
   const sat = satAt(SITE.center.lon, SITE.center.lat);
   renderHero($('insp-hero'), {
-    img: sat.css, caption: sat.caption, title: 'Nueva ruta', meta: 'Pulsa en el mapa el origen (A) y el destino (B)',
+    img: sat.css, caption: sat.caption, title: 'New route', meta: 'Click the map to set origin (A) and destination (B)',
     from: 'A', to: 'B', frac: 0, left: '', right: '',
   });
 }
@@ -242,10 +242,10 @@ function onPoints({ origin, dest }) {
     if (step) {
       mapHint.querySelector('.mh-pin').className = `mh-pin ${step === 'A' ? 'origin' : 'dest'}`;
       mapHint.querySelector('.mh-pin b').textContent = step;
-      mapHint.querySelector('.mh-text b').textContent = step === 'A' ? 'Marca el origen en el mapa' : 'Ahora marca el destino';
+      mapHint.querySelector('.mh-text b').textContent = step === 'A' ? 'Mark the origin on the map' : 'Now mark the destination';
       mapHint.querySelector('.mh-text small').textContent = step === 'A'
-        ? 'Haz clic donde empieza la travesía (A)'
-        : 'Haz clic donde quieres llegar (B): las rutas se calculan al momento';
+        ? 'Click where the traverse starts (A)'
+        : 'Click where you want to go (B): routes are computed instantly';
       mapHint.classList.remove('out');
       // Reinicia la entrada desde arriba en cada paso
       mapHint.classList.remove('in');
@@ -301,9 +301,9 @@ function offerDrive(plan) {
   el.className = 'drive-toast';
   el.setAttribute('role', 'status');
   el.innerHTML = `<svg class="dt-ring" viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="17"/><circle class="dt-arc" cx="20" cy="20" r="17"/></svg>
-    <div class="dt-text"><b>Ruta lista · ${plan.labels.join(' · ')}</b><span>Al volante en <i>10</i> s</span></div>
-    <button class="btn primary" type="button" data-go>Ir ya</button>
-    <button class="btn" type="button" data-stay>Quedarme en el mapa</button>`;
+    <div class="dt-text"><b>Route ready · ${plan.labels.join(' · ')}</b><span>Driving in <i>10</i> s</span></div>
+    <button class="btn primary" type="button" data-go>Go now</button>
+    <button class="btn" type="button" data-stay>Stay on the map</button>`;
   document.querySelector('.stage').append(el);
   let left = 10; // segundos de cuenta atrás
   const timer = setInterval(() => {

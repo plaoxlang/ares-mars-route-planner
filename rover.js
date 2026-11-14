@@ -27,7 +27,7 @@ export async function loadRover(url, onProgress) {
 
   const wheelsNode = model.getObjectByName('Wheels_objs');
   const suspNode = model.getObjectByName('suspension');
-  if (!wheelsNode || !suspNode) throw new Error('El modelo no tiene las mallas Wheels_objs/suspension esperadas');
+  if (!wheelsNode || !suspNode) throw new Error('The model is missing the expected Wheels_objs/suspension meshes');
 
   // --- Reparto de triángulos ---
   const sideOf = (x) => (x >= 0 ? 'p' : 'n');

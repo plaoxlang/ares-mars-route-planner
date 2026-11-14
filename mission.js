@@ -42,30 +42,30 @@ export function missionReport(plan, { doseAt, coldAt }) {
   const checks = [];
   const add = (level, text) => checks.push({ level, text });
   if (hoursUse !== null) {
-    if (hoursUse > 1) add(2, `Dura ${fmtH(s.hours)} y la autonomía es de ${num(v.maxHours)} h`);
-    else if (hoursUse > 0.75) add(1, `Usa el ${num(hoursUse * 100)} % de la autonomía: poco margen para volver`);
-    else add(0, `Usa el ${num(hoursUse * 100)} % de la autonomía`);
+    if (hoursUse > 1) add(2, `Takes ${fmtH(s.hours)} and the endurance is ${num(v.maxHours)} h`);
+    else if (hoursUse > 0.75) add(1, `Uses ${num(hoursUse * 100)}% of the endurance: little margin to get back`);
+    else add(0, `Uses ${num(hoursUse * 100)}% of the endurance`);
   }
   if (batteryUse !== null) {
-    if (batteryUse > 1) add(2, `Necesita el ${num(batteryUse * 100)} % de la batería`);
-    else if (batteryUse > 0.75) add(1, `Gasta el ${num(batteryUse * 100)} % de la batería`);
-    else add(0, `Gasta el ${num(batteryUse * 100)} % de la batería`);
+    if (batteryUse > 1) add(2, `Needs ${num(batteryUse * 100)}% of the battery`);
+    else if (batteryUse > 0.75) add(1, `Uses ${num(batteryUse * 100)}% of the battery`);
+    else add(0, `Uses ${num(batteryUse * 100)}% of the battery`);
   }
-  if (slopeMargin < 0) add(2, `Pendiente máxima de ${num(s.max_slope_deg, 1)}°, por encima del límite del vehículo (${num(v.maxSlope)}°)`);
-  else if (slopeMargin < 2 || s.max_slope_deg >= TILT.bad) add(1, `Pendiente máxima de ${num(s.max_slope_deg, 1)}° (límite ${num(v.maxSlope)}°)`);
-  else add(0, `Pendiente máxima de ${num(s.max_slope_deg, 1)}°, dentro del límite (${num(v.maxSlope)}°)`);
-  if (steepShare > 0.3) add(1, `El ${num(steepShare * 100)} % del camino va por pendientes de más de ${TILT.warn}°`);
+  if (slopeMargin < 0) add(2, `Max slope of ${num(s.max_slope_deg, 1)}°, above the vehicle limit (${num(v.maxSlope)}°)`);
+  else if (slopeMargin < 2 || s.max_slope_deg >= TILT.bad) add(1, `Max slope of ${num(s.max_slope_deg, 1)}° (limit ${num(v.maxSlope)}°)`);
+  else add(0, `Max slope of ${num(s.max_slope_deg, 1)}°, within the limit (${num(v.maxSlope)}°)`);
+  if (steepShare > 0.3) add(1, `${num(steepShare * 100)}% of the route is on slopes steeper than ${TILT.warn}°`);
   if (coldShare !== null) {
-    if (coldShare > 0.3) add(1, `El ${num(coldShare * 100)} % del tiempo pasa por las zonas más frías de noche: no conviene que la noche le pille ahí`);
-    else add(0, `Solo el ${num(coldShare * 100)} % del tiempo pasa por las zonas más frías de noche`);
+    if (coldShare > 0.3) add(1, `${num(coldShare * 100)}% of the time is spent in the coldest areas at night: avoid being caught there after dark`);
+    else add(0, `Only ${num(coldShare * 100)}% of the time is spent in the coldest areas at night`);
   }
-  add(0, `Dosis estimada de ${num(dose, 2)} mSv: el ${num((dose / DOSE_REF.careerLimit_mSv) * 100, 2)} % del límite de carrera de NASA`);
+  add(0, `Estimated dose of ${num(dose, 2)} mSv: ${num((dose / DOSE_REF.careerLimit_mSv) * 100, 2)}% of NASA's career limit`);
   const level = Math.max(...checks.map((c) => c.level));
   checks.sort((a, b) => b.level - a.level);
 
   return {
     level,
-    verdict: ['GO', 'PRECAUCIÓN', 'NO-GO'][level],
+    verdict: ['GO', 'CAUTION', 'NO-GO'][level],
     checks,
     dose,
     cumDose,
@@ -87,14 +87,14 @@ export function reportHTML(plan, r) {
   return `
     <div class="mission mission-${LEVEL_CLS[r.level]}">
       <div class="mission-head">
-        <span class="mission-kicker">Informe de misión</span>
+        <span class="mission-kicker">Mission report</span>
         <span class="mission-verdict">${r.verdict}</span>
       </div>
       <div class="mission-grid">
-        <div title="${plan.vehicle.maxHours ? `de ${num(plan.vehicle.maxHours)} h de autonomía` : 'de travesía'}"><b>${fmtH(s.hours)}</b><span>${plan.vehicle.maxHours ? `de ${num(plan.vehicle.maxHours)} h` : 'travesía'}</span></div>
-        <div title="Dosis estimada: ${num(r.earthDays)} días de radiación natural en la Tierra"><b>${num(r.dose, 2)}</b><span>mSv</span></div>
+        <div title="${plan.vehicle.maxHours ? `of ${num(plan.vehicle.maxHours)} h endurance` : 'traverse time'}"><b>${fmtH(s.hours)}</b><span>${plan.vehicle.maxHours ? `of ${num(plan.vehicle.maxHours)} h` : 'traverse'}</span></div>
+        <div title="Estimated dose: ${num(r.earthDays)} days of natural background radiation on Earth"><b>${num(r.dose, 2)}</b><span>mSv</span></div>
         <div title="+${num(s.ascent_m)} / −${num(s.descent_m)} m"><b>${fmt.km(s.distance_m)}</b><span>+${num(s.ascent_m)} m</span></div>
-        <div><b>${r.batteryUse !== null ? `${num(r.batteryUse * 100)} %` : `${num(s.max_slope_deg, 1)}°`}</b><span>${r.batteryUse !== null ? 'batería' : 'pend. máx.'}</span></div>
+        <div><b>${r.batteryUse !== null ? `${num(r.batteryUse * 100)}%` : `${num(s.max_slope_deg, 1)}°`}</b><span>${r.batteryUse !== null ? 'battery' : 'max slope'}</span></div>
       </div>
       ${checksHTML(r)}
     </div>`;
@@ -106,7 +106,7 @@ function checksHTML(r) {
   const warn = r.checks.filter((c) => c.level > 0);
   const ok = r.checks.filter((c) => c.level === 0);
   return `${warn.length ? `<ul class="mission-checks">${warn.map(li).join('')}</ul>` : ''}
-    ${ok.length ? `<details class="mission-more"><summary>${ok.length} ${ok.length === 1 ? 'punto' : 'puntos'} en orden</summary>
+    ${ok.length ? `<details class="mission-more"><summary>${ok.length} ${ok.length === 1 ? 'check' : 'checks'} OK</summary>
       <ul class="mission-checks">${ok.map(li).join('')}</ul></details>` : ''}`;
 }
 
@@ -114,16 +114,16 @@ function checksHTML(r) {
 export function arrivalHTML(plan, r) {
   const s = plan.stats;
   return `
-    <div class="arrival mission-${LEVEL_CLS[r.level]}" role="dialog" aria-label="Llegada al destino">
-      <span class="mission-kicker">Destino alcanzado · ${plan.vehicleName}</span>
-      <h2>${r.level === 2 ? 'Misión fuera de límites' : r.level === 1 ? 'Llegada con poco margen' : 'Misión completada'}</h2>
+    <div class="arrival mission-${LEVEL_CLS[r.level]}" role="dialog" aria-label="Arrival at destination">
+      <span class="mission-kicker">Destination reached · ${plan.vehicleName}</span>
+      <h2>${r.level === 2 ? 'Mission out of limits' : r.level === 1 ? 'Arrived with little margin' : 'Mission complete'}</h2>
       <div class="arrival-stats">
-        <div><b>${fmtH(s.hours)}</b><span>tiempo</span></div>
-        <div><b>${fmt.km(s.distance_m)}</b><span>recorrido</span></div>
-        <div><b>${num(r.dose, 2)}</b><span>mSv recibidos</span></div>
-        <div><b>${num(s.max_slope_deg, 1)}°</b><span>pendiente máx.</span></div>
+        <div><b>${fmtH(s.hours)}</b><span>time</span></div>
+        <div><b>${fmt.km(s.distance_m)}</b><span>distance</span></div>
+        <div><b>${num(r.dose, 2)}</b><span>mSv received</span></div>
+        <div><b>${num(s.max_slope_deg, 1)}°</b><span>max slope</span></div>
       </div>
       <p>${r.checks[0].text}.</p>
-      <button class="btn primary" type="button" data-arrival-close>Seguir explorando</button>
+      <button class="btn primary" type="button" data-arrival-close>Keep exploring</button>
     </div>`;
 }

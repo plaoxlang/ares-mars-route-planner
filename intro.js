@@ -20,14 +20,14 @@ export function runIntro({ THREE, camera, controls, stage, onFrame, onTour, onDo
     </div>
     <div class="intro-title">
       <h1>ARES</h1>
-      <p class="intro-sub">Planificación de travesías en Marte</p>
+      <p class="intro-sub">Traverse planning on Mars</p>
       <p class="intro-meta mono">${meta}</p>
     </div>
     <div class="intro-cta" hidden>
-      <button class="btn primary" type="button" data-intro="tour">Ver la presentación</button>
-      <button class="btn" type="button" data-intro="explore">Explorar por mi cuenta</button>
+      <button class="btn primary" type="button" data-intro="tour">Watch the presentation</button>
+      <button class="btn" type="button" data-intro="explore">Explore on my own</button>
     </div>
-    <button class="intro-skip" type="button" data-intro="skip">Saltar intro · Esc</button>`;
+    <button class="intro-skip" type="button" data-intro="skip">Skip intro · Esc</button>`;
   stage.appendChild(el);
   document.body.classList.add('intro-on');
   controls.enabled = false;

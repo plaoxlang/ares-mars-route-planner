@@ -3,17 +3,17 @@ import { SITE, num, loadJson } from './shared.js';
 
 const CAMERAS = {
   NAVCAM_LEFT: 'Navcam', NAVCAM_RIGHT: 'Navcam', MCZ_LEFT: 'Mastcam-Z', MCZ_RIGHT: 'Mastcam-Z',
-  FRONT_HAZCAM_LEFT_A: 'Hazcam del.', FRONT_HAZCAM_RIGHT_A: 'Hazcam del.', FRONT_HAZCAM_LEFT_B: 'Hazcam del.', FRONT_HAZCAM_RIGHT_B: 'Hazcam del.',
-  REAR_HAZCAM_LEFT: 'Hazcam tras.', REAR_HAZCAM_RIGHT: 'Hazcam tras.', SUPERCAM_RMI: 'SuperCam', SKYCAM: 'SkyCam',
+  FRONT_HAZCAM_LEFT_A: 'Front Hazcam', FRONT_HAZCAM_RIGHT_A: 'Front Hazcam', FRONT_HAZCAM_LEFT_B: 'Front Hazcam', FRONT_HAZCAM_RIGHT_B: 'Front Hazcam',
+  REAR_HAZCAM_LEFT: 'Rear Hazcam', REAR_HAZCAM_RIGHT: 'Rear Hazcam', SUPERCAM_RMI: 'SuperCam', SKYCAM: 'SkyCam',
   SHERLOC_WATSON: 'WATSON', CACHECAM: 'CacheCam', PIXL_MCC: 'PIXL',
 };
-const CAMERA_ORDER = ['Navcam', 'Mastcam-Z', 'Hazcam del.', 'Hazcam tras.', 'SuperCam', 'WATSON'];
+const CAMERA_ORDER = ['Navcam', 'Mastcam-Z', 'Front Hazcam', 'Rear Hazcam', 'SuperCam', 'WATSON'];
 
 // Hasta 12 fotos variadas: como mucho 3 por cámara, priorizando las de navegación y paisaje.
 function pickImages(images) {
   const byCam = new Map();
   for (const im of images) {
-    const cam = CAMERAS[im.camera?.instrument] ?? im.camera?.instrument ?? 'Cámara';
+    const cam = CAMERAS[im.camera?.instrument] ?? im.camera?.instrument ?? 'Camera';
     if (!byCam.has(cam)) byCam.set(cam, []);
     byCam.get(cam).push({ cam, thumb: im.image_files?.small, url: im.image_files?.large ?? im.image_files?.full_res });
   }
@@ -40,29 +40,29 @@ export function createPhotos(box, status, { onLoad } = {}) {
   return async function show(sol, { paused = false } = {}) {
     const my = ++ticket;
     if (paused) {
-      status.textContent = 'en pausa al reproducir';
+      status.textContent = 'paused during playback';
       box.innerHTML = '';
       return;
     }
-    status.textContent = 'cargando…';
+    status.textContent = 'loading…';
     box.innerHTML = '<div class="skeleton"></div>'.repeat(8);
     try {
       const data = await imagesForSol(sol);
       if (my !== ticket) return;
       if (!data.picked.length) {
-        status.textContent = 'ninguna este sol';
+        status.textContent = 'none this sol';
         box.innerHTML = '';
         return;
       }
-      status.textContent = `${data.picked.length} de ${num(data.total)}`;
+      status.textContent = `${data.picked.length} of ${num(data.total)}`;
       onLoad?.(data.picked, sol);
       box.innerHTML = data.picked.map((im) => `<a href="${im.url}" target="_blank" rel="noopener" title="${im.cam} · sol ${sol}">
           <img src="${im.thumb}" alt="${im.cam}, sol ${sol}" loading="lazy"><span class="cam">${im.cam}</span></a>`).join('');
     } catch (err) {
       cache.delete(sol);
       if (my !== ticket) return;
-      status.textContent = 'no disponibles';
-      box.innerHTML = `<p class="empty" style="grid-column:1/-1">No se pudieron cargar (${err.message}).</p>`;
+      status.textContent = 'unavailable';
+      box.innerHTML = `<p class="empty" style="grid-column:1/-1">Could not load them (${err.message}).</p>`;
     }
   };
 }

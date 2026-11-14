@@ -3,15 +3,15 @@
 // imagen de satélite del punto: HiRISE encima y CTX debajo (donde HiRISE no tiene dato se ve CTX).
 import { SITE, fmt, num, latLon, tiltClass, trekTileAt } from './shared.js';
 
-const STOP_STATUS = { ok: 'Nominal', warn: 'Precaución', bad: 'Pendiente fuerte' };
+const STOP_STATUS = { ok: 'Nominal', warn: 'Caution', bad: 'Steep slope' };
 
 export function satAt(lon, lat) {
   const h = SITE.tiles.hirise.bounds;
   const inHirise = lon > h.west && lon < h.east && lat > h.south && lat < h.north;
   const ctx = `url("${trekTileAt(SITE.tiles.ctx.layer, 'png', 13, lon, lat)}")`;
   return inHirise
-    ? { css: `url("${trekTileAt(SITE.tiles.hirise.layer, 'png', 16, lon, lat)}"), ${ctx}`, caption: 'HiRISE / CTX · satélite' }
-    : { css: ctx, caption: 'CTX · satélite' };
+    ? { css: `url("${trekTileAt(SITE.tiles.hirise.layer, 'png', 16, lon, lat)}"), ${ctx}`, caption: 'HiRISE / CTX · satellite' }
+    : { css: ctx, caption: 'CTX · satellite' };
 }
 
 export function renderHero(el, { img, caption, title, meta, meta2, status, from, to, frac, left, right }) {
@@ -42,13 +42,13 @@ export function renderStopHero(el, p, i, pts, photo) {
     img: ph ? ph.url : sat.css,
     caption: ph ? `${ph.cam} · sol ${p.sol}` : sat.caption,
     title: 'Perseverance',
-    meta: `Sol ${p.sol} · parada ${num(i + 1)} de ${num(pts.length)}`,
+    meta: `Sol ${p.sol} · stop ${num(i + 1)} of ${num(pts.length)}`,
     meta2: `≈ ${SITE.solDate(p.sol)} · ${latLon(p)}`,
     status: { cls, text: STOP_STATUS[cls] },
-    from: `Sol ${pts[0].sol} · aterrizaje`,
+    from: `Sol ${pts[0].sol} · landing`,
     to: `Sol ${pts.at(-1).sol}`,
     frac: p.dist_total_m / (pts.at(-1).dist_total_m || 1),
-    left: `${fmt.km(p.dist_total_m)} recorridos`,
-    right: `${fmt.km(pts.at(-1).dist_total_m)} en total`,
+    left: `${fmt.km(p.dist_total_m)} driven`,
+    right: `${fmt.km(pts.at(-1).dist_total_m)} total`,
   });
 }

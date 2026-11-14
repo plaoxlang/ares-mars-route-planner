@@ -18,19 +18,19 @@ export function trekTileAt(layer, ext, z, lon, lat) {
 
 export const TILT = { warn: 8, bad: 15 };
 export const tiltClass = (t) => (t >= TILT.bad ? 'bad' : t >= TILT.warn ? 'warn' : 'ok');
-export const TILT_LABEL = { ok: 'suave', warn: 'moderada', bad: 'fuerte' };
+export const TILT_LABEL = { ok: 'gentle', warn: 'moderate', bad: 'steep' };
 
 export const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 export const colors = () => ({ ok: css('--ok'), warn: css('--warn'), bad: css('--bad'), accent: css('--accent') });
 
 // Números en es-ES con signo menos tipográfico.
-export const num = (n, d = 0) => n.toLocaleString('es-ES', { minimumFractionDigits: d, maximumFractionDigits: d }).replace('-', '−');
+export const num = (n, d = 0) => n.toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d }).replace('-', '−');
 export const fmt = {
   m: (n) => `${num(Math.round(n))} m`,
   km: (n) => `${num(n / 1000, 2)} km`,
   deg: (n) => `${num(n, 1)}°`,
 };
-export const latLon = (p) => `${num(Math.abs(p.lat), 4)}° ${p.lat < 0 ? 'S' : 'N'}, ${num(Math.abs(p.lon), 4)}° ${p.lon < 0 ? 'O' : 'E'}`;
+export const latLon = (p) => `${num(Math.abs(p.lat), 4)}° ${p.lat < 0 ? 'S' : 'N'}, ${num(Math.abs(p.lon), 4)}° ${p.lon < 0 ? 'W' : 'E'}`;
 
 export const $ = (id) => document.getElementById(id);
 
@@ -79,7 +79,7 @@ const SOL_MS = 88775244; // un sol en milisegundos
 
 export const SITE = {
   name: 'Jezero',
-  title: 'Cráter Jezero',
+  title: 'Jezero Crater',
   rover: 'Perseverance',
   center: { lon: 77.38, lat: 18.46 },
   route: 'data/jezero/elevation_waypoints.json',
@@ -109,20 +109,20 @@ export const metricHTML = ({ k, v, unit = '', sub = '', cls = '', extra = '' }) 
 
 export function renderInspector(el, { p, i, n, prev, extraMetrics = [], sections = '' }) {
   const cls = tiltClass(p.tilt_deg);
-  const [stCls, stText] = cls === 'bad' ? ['bad', 'Pendiente fuerte'] : cls === 'warn' ? ['warn', 'Precaución'] : ['ok', 'Nominal'];
+  const [stCls, stText] = cls === 'bad' ? ['bad', 'Steep slope'] : cls === 'warn' ? ['warn', 'Caution'] : ['ok', 'Nominal'];
   const climb = prev ? p.elev_m - prev.elev_m : 0;
   el.innerHTML = `
     <header class="insp-head">
       <div class="insp-top"><div class="insp-sol"><small>SOL</small>${p.sol}</div><span class="status ${stCls}">${stText}</span></div>
-      <div class="insp-meta">≈ ${SITE.solDate(p.sol)} · parada ${num(i + 1)} de ${num(n)}</div>
+      <div class="insp-meta">≈ ${SITE.solDate(p.sol)} · stop ${num(i + 1)} of ${num(n)}</div>
       <div class="insp-meta">${latLon(p)}</div>
     </header>
     ${p.note && !/localization/i.test(p.note) ? `<p class="insp-note">${p.note}</p>` : ''}
     <div class="metrics">
-      ${metricHTML({ k: 'Elevación', v: num(p.elev_m), unit: 'm', sub: `${climb >= 0 ? '+' : '−'}${num(Math.abs(climb), 1)} m en ${num(p.dist_from_prev_m)} m` })}
-      ${metricHTML({ k: 'Recorrido', v: num(p.dist_total_m / 1000, 2), unit: 'km', sub: `site ${p.site} · drive ${p.drive}` })}
-      ${metricHTML({ k: 'Inclinación', v: num(p.tilt_deg, 1), unit: '°', sub: `rover · ${TILT_LABEL[cls]}`, cls })}
-      ${metricHTML({ k: 'Cabeceo / alabeo', v: `${num(p.pitch_deg, 1)} / ${num(p.roll_deg, 1)}`, unit: '°' })}
+      ${metricHTML({ k: 'Elevation', v: num(p.elev_m), unit: 'm', sub: `${climb >= 0 ? '+' : '−'}${num(Math.abs(climb), 1)} m over ${num(p.dist_from_prev_m)} m` })}
+      ${metricHTML({ k: 'Distance', v: num(p.dist_total_m / 1000, 2), unit: 'km', sub: `site ${p.site} · drive ${p.drive}` })}
+      ${metricHTML({ k: 'Tilt', v: num(p.tilt_deg, 1), unit: '°', sub: `rover · ${TILT_LABEL[cls]}`, cls })}
+      ${metricHTML({ k: 'Pitch / roll', v: `${num(p.pitch_deg, 1)} / ${num(p.roll_deg, 1)}`, unit: '°' })}
       ${extraMetrics.join('')}
     </div>
     ${sections}`;
@@ -130,14 +130,14 @@ export function renderInspector(el, { p, i, n, prev, extraMetrics = [], sections
 
 // Nota común: no hay temperatura por parada en Jezero.
 export const CLIMATE_NOTE = `<section class="insp-sec">
-  <h3 class="sec-title">Temperatura <span>MEDA</span></h3>
-  <p class="empty">El feed público de MEDA (Perseverance) solo cubre unos pocos soles, así que no hay temperatura por parada.
-  Los datos completos están en NASA PDS.</p></section>`;
+  <h3 class="sec-title">Temperature <span>MEDA</span></h3>
+  <p class="empty">The public MEDA feed (Perseverance) only covers a few sols, so there is no per-stop temperature.
+  The full dataset is in NASA PDS.</p></section>`;
 
 // Panel de la ruta: leyenda de inclinación (único modo de color en Jezero).
 export function renderRouteLegend() {
   $('route-legend').innerHTML = '<div class="legend"><span><i class="sw ok"></i>&lt; 8°</span><span><i class="sw warn"></i>8–15°</span><span><i class="sw bad"></i>&gt; 15°</span></div>'
-    + '<p>Pendiente del terreno en cada tramo de la ruta (DTM CTX de 20 m).</p>';
+    + '<p>Terrain slope along each stretch of the route (20 m CTX DTM).</p>';
 }
 
 // ---------- Perfil de elevación = barra de tiempo ----------
@@ -153,7 +153,7 @@ export function buildProfile(wrap, points, { onPick, colorAt, tip: tipText, colo
   svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
   svg.setAttribute('preserveAspectRatio', 'none');
   svg.setAttribute('role', 'img');
-  svg.setAttribute('aria-label', 'Perfil de elevación de la ruta. Haz clic o arrastra para elegir parada.');
+  svg.setAttribute('aria-label', 'Route elevation profile. Click or drag to pick a stop.');
   wrap.prepend(svg);
 
   const maxD = points.at(-1).dist_total_m;
@@ -279,7 +279,7 @@ export function buildProfile(wrap, points, { onPick, colorAt, tip: tipText, colo
 export function setPlayButton(btn, playing) {
   btn.innerHTML = playing ? ICON.pause : ICON.play;
   btn.setAttribute('aria-pressed', String(playing));
-  btn.setAttribute('aria-label', playing ? 'Pausar' : 'Reproducir ruta');
+  btn.setAttribute('aria-label', playing ? 'Pause' : 'Play route');
 }
 
 // Índice de parada compartido entre vistas vía hash: 3d.html#i=123

@@ -110,7 +110,7 @@ async function drawMosaic(src, e, ctx, { onTile, prog = progress } = {}) {
 }
 
 // ---------- Datos: ruta y relieve ----------
-setLoading('Cargando relieve', 'DTM CTX de 20 m · USGS');
+setLoading('Loading terrain', '20 m CTX DTM · USGS');
 $('loading-bar').style.width = '40%';
 const [elev, dem] = await Promise.all([loadJson(SITE.route), loadDem(SITE.dem)]);
 const pts = elev.points;
@@ -138,8 +138,8 @@ const fit = (() => {
   const mean = d.reduce((a, b) => a + b, 0) / d.length;
   return { n: d.length, bias: mean, rmse: Math.sqrt(d.reduce((a, b) => a + b * b, 0) / d.length) };
 })();
-$('calib').textContent = `Relieve: DTM CTX controlado de ${dem.resolution_m} m (${demW} × ${demH} px). `
-  + `Frente a las ${fit.n} alturas medidas por el rover: error cuadrático medio ±${num(fit.rmse, 1)} m, sesgo ${num(fit.bias, 1)} m.`;
+$('calib').textContent = `Terrain: controlled ${dem.resolution_m} m CTX DTM (${demW} × ${demH} px). `
+  + `Against ${fit.n} elevations measured by the rover: RMS error ±${num(fit.rmse, 1)} m, bias ${num(fit.bias, 1)} m.`;
 
 const toLocal = (lon, lat, h) => new THREE.Vector3(
   (lon - lonC) * cosLat * M_PER_DEG,
@@ -225,6 +225,31 @@ const terrainDetail = applyGroundDetail(terrain.material, {
   // Sin mapa de normales: repetido sobre 20 km crearía una trama visible desde lejos.
   sizeU: widthM, sizeV: heightM, fine: 6, coarse: 40, fade: [50, 350], fadeCoarse: [150, 700], normalScale: 0,
 });
+// Capas de datos como color sobre la imagen de satélite: se ve la capa sin perder el relieve ni la textura
+// (antes la capa sustituía a la imagen y de cerca quedaba una mancha lisa de 20 m/px).
+// uLayerUV pasa del UV del material al de la textura de la capa (en el terreno, la identidad).
+function addLayerTint(mat, cacheKey) {
+  const u = { uLayerMap: { value: texture }, uLayerMix: { value: 0 }, uLayerUV: { value: new THREE.Vector4(0, 0, 1, 1) } };
+  const prev = mat.onBeforeCompile;
+  mat.onBeforeCompile = (shader, r) => {
+    prev?.call(mat, shader, r);
+    Object.assign(shader.uniforms, u);
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', '#include <common>\nuniform sampler2D uLayerMap;\nuniform float uLayerMix;\nuniform vec4 uLayerUV;')
+      .replace('#include <map_fragment>', `#include <map_fragment>
+#ifdef USE_MAP
+if (uLayerMix > 0.0) {
+  float lumL = pow(max(dot(diffuseColor.rgb, vec3(0.299, 0.587, 0.114)), 0.0), 1.0 / 2.2);
+  vec3 lc = texture2D(uLayerMap, uLayerUV.xy + vMapUv * uLayerUV.zw).rgb;
+  diffuseColor.rgb = mix(diffuseColor.rgb, lc * (0.35 + lumL * 1.3), uLayerMix);
+}
+#endif`);
+  };
+  mat.customProgramCacheKey = () => cacheKey;
+  mat.needsUpdate = true;
+  return u;
+}
+const terrainLayer = addLayerTint(terrain.material, 'terrain-layer');
 // El terreno general solo se tiñe en las vistas del rover y con la capa de satélite en gris.
 function updateTerrainTint() {
   terrainDetail.uTint.value.set(1, 1, 1);
@@ -409,15 +434,19 @@ async function setLayer(key) {
   const radio = document.querySelector(`input[name="layer"][value="${key}"]`);
   if (radio) radio.checked = true; // por si la cambia el tour
   if (!layer.texture) {
-    $('tex-status').textContent = 'Generando capa…';
+    $('tex-status').textContent = 'Generating layer…';
     await new Promise(requestAnimationFrame); // deja pintar el aviso antes del cálculo
     layer.texture = await layer.build();
     $('tex-status').textContent = '';
   }
   if (state.layer !== key) return; // el usuario cambió de capa mientras se generaba
-  terrain.material.map = layer.texture;
+  // Capas de datos: imagen de satélite debajo y la capa como color encima
+  const data = key !== 'sat' && key !== 'color';
+  terrain.material.map = data ? texture : layer.texture;
   terrain.material.needsUpdate = true;
-  terrainDetail.uDetStrength.value = key === 'sat' || key === 'color' ? 1 : 0;
+  terrainLayer.uLayerMap.value = data ? layer.texture : texture;
+  terrainLayer.uLayerMix.value = data ? 0.85 : 0;
+  terrainDetail.uDetStrength.value = data ? 0.6 : 1;
   updateTerrainTint();
   renderLegend(key);
   syncGround();
@@ -428,25 +457,25 @@ function renderLegend(key) {
   if (key === 'elev') {
     el.innerHTML = `<div class="ramp" style="background:linear-gradient(to right,${rampCss(ELEV_RAMP)})"></div>
       <div class="ramp-labels"><span>${fmt.m(hMin)}</span><span>${fmt.m(hMax)}</span></div>
-      <p>Altura del DTM respecto al areoide, con sombreado del relieve.</p>`;
+      <p>DTM elevation above the areoid, with hillshading.</p>`;
   } else if (key === 'slope') {
     el.innerHTML = `<div class="legend"><span><i class="sw ok"></i>&lt; 8°</span><span><i class="sw warn"></i>8–15°</span><span><i class="sw bad"></i>&gt; 15°</span></div>
-      <p>Pendiente del DTM CTX a escala de ~60 m. Las pendientes locales (rocas, escalones) pueden ser mayores.</p>`;
+      <p>CTX DTM slope at a ~60 m scale. Local slopes (rocks, ledges) can be steeper.</p>`;
   } else if (key === 'rad') {
     const r = radiationGrid();
     el.innerHTML = `<div class="ramp" style="background:linear-gradient(to right,${rampCss(RAD_RAMP)})"></div>
-      <div class="ramp-labels"><span>${num(r.min, 2)}</span><span>${num(r.max, 2)} mSv/día</span></div>
-      <p><strong>Estimación, no medida.</strong> Parte de ${num(RAD.base_mSv_day, 2)} mSv/día medidos por RAD (Curiosity) en Gale
-      y la ajusta por el cielo visible (el relieve tapa parte de la radiación) y por la altitud (Jezero está más alto: menos atmósfera encima).
-      No incluye el ciclo solar ni tormentas solares.</p>`;
+      <div class="ramp-labels"><span>${num(r.min, 2)}</span><span>${num(r.max, 2)} mSv/day</span></div>
+      <p><strong>Estimate, not a measurement.</strong> Starts from the ${num(RAD.base_mSv_day, 2)} mSv/day measured by RAD (Curiosity) at Gale
+      and adjusts it for visible sky (terrain blocks part of the radiation) and for elevation (Jezero sits higher: less atmosphere overhead).
+      Does not include the solar cycle or solar storms.</p>`;
   } else if (key === 'cold') {
     el.innerHTML = `<div class="ramp" style="background:linear-gradient(to right,${rampCss(COLD_RAMP)})"></div>
-      <div class="ramp-labels"><span>más frío de noche</span><span>más templado</span></div>
-      <p>THEMIS IR nocturno (~100 m/px). Relativo, no son grados: la arena y el polvo se enfrían más que la roca.</p>`;
+      <div class="ramp-labels"><span>colder at night</span><span>milder</span></div>
+      <p>THEMIS nighttime IR (~100 m/px). Relative, not degrees: sand and dust cool faster than rock.</p>`;
   } else if (key === 'color') {
-    el.innerHTML = '<p>Detalle de HiRISE/CTX con el color de Viking (~300 m/px). Color aproximado, no es una foto en color real.</p>';
+    el.innerHTML = '<p>HiRISE/CTX detail with Viking color (~300 m/px). Approximate color, not a true-color photo.</p>';
   } else {
-    el.innerHTML = '<p>Mosaicos controlados de Jezero: HiRISE (25 cm/px de origen) sobre CTX (6 m/px). Escala de grises.</p>';
+    el.innerHTML = '<p>Controlled Jezero mosaics: HiRISE (25 cm/px native) over CTX (6 m/px). Grayscale.</p>';
   }
 }
 
@@ -730,7 +759,7 @@ uniform float uFocus;`)
   matchTone();
   textureDone.then(matchTone);
   return mesh;
-})().catch((err) => { console.warn('Terreno lejano no disponible:', err); return null; });
+})().catch((err) => { console.warn('Distant terrain unavailable:', err); return null; });
 
 // ---------- Ruta ----------
 const routePos = [];
@@ -788,8 +817,8 @@ const zone = (() => {
   world.add(g);
   const label = document.createElement('div');
   label.className = 'zone-label';
-  const km = (m) => (m / 1000).toFixed(1).replace('.', ',');
-  label.innerHTML = `<b>Zona de estudio</b><span>Relieve DTM 20 m · ${km(widthM)} × ${km(heightM)} km</span>`;
+  const km = (m) => (m / 1000).toFixed(1);
+  label.innerHTML = `<b>Study area</b><span>20 m DTM terrain · ${km(widthM)} × ${km(heightM)} km</span>`;
   host.append(label);
   return { group: g, mats: [halo, line], label, corner: new THREE.Vector3(0, groundAt(0, hh) + 30, hh) };
 })();
@@ -984,26 +1013,26 @@ function renderStop(p, i) {
     n: pts.length,
     prev: pts[i - 1],
     extraMetrics: [
-      metricHTML({ k: 'Pendiente terreno', v: num(slopeHere, 1), unit: '°', sub: 'DTM CTX 20 m', cls: tiltClass(slopeHere) }),
+      metricHTML({ k: 'Terrain slope', v: num(slopeHere, 1), unit: '°', sub: 'DTM CTX 20 m', cls: tiltClass(slopeHere) }),
       metricHTML({
-        k: 'Frío nocturno',
+        k: 'Night cold',
         v: coldPct === null ? '…' : `${coldPct}`,
         unit: coldPct === null ? '' : '%',
-        sub: coldPct === null ? 'cargando THEMIS' : `más frío que el ${coldPct} % de la zona`,
+        sub: coldPct === null ? 'loading THEMIS' : `colder than ${coldPct}% of the area`,
       }),
       metricHTML({
-        k: 'Radiación est.',
+        k: 'Est. radiation',
         v: num(dose, 2),
-        unit: 'mSv/día',
-        sub: 'modelo · ver capa',
-        extra: `<div class="meter" title="Posición dentro del rango de la zona">
+        unit: 'mSv/day',
+        sub: 'model · see layer',
+        extra: `<div class="meter" title="Position within the area's range">
           <i style="width:${pct}%;background:${rgbCss(rampRgb(RAD_RAMP, pct / 100))}"></i></div>`,
       }),
       metricHTML({
-        k: 'Altura DTM',
+        k: 'DTM elevation',
         v: num(terrainAt(p.lon, p.lat)),
         unit: 'm',
-        sub: `${terrainAt(p.lon, p.lat) - p.elev_m >= 0 ? '+' : '−'}${num(Math.abs(terrainAt(p.lon, p.lat) - p.elev_m), 1)} m frente al rover`,
+        sub: `${terrainAt(p.lon, p.lat) - p.elev_m >= 0 ? '+' : '−'}${num(Math.abs(terrainAt(p.lon, p.lat) - p.elev_m), 1)} m vs. rover`,
       }),
     ],
     sections: CLIMATE_NOTE,
@@ -1012,11 +1041,11 @@ function renderStop(p, i) {
 
 function renderStats(s) {
   const items = [
-    [`${num(s.distance_m / 1000, 1)} km`, 'Recorrido'],
-    [`+${num(s.elev_end_m - s.elev_start_m)} m`, 'Desnivel neto'],
-    [`${num(s.cumulative_gain_m)} m`, 'Subida acumulada'],
-    [`${num(pts.length)}`, 'Paradas'],
-    [`${pts[0].sol}–${pts.at(-1).sol}`, 'Soles'],
+    [`${num(s.distance_m / 1000, 1)} km`, 'Distance'],
+    [`+${num(s.elev_end_m - s.elev_start_m)} m`, 'Net elevation change'],
+    [`${num(s.cumulative_gain_m)} m`, 'Total climb'],
+    [`${num(pts.length)}`, 'Stops'],
+    [`${pts[0].sol}–${pts.at(-1).sol}`, 'Sols'],
   ];
   $('stats').innerHTML = items.map(([v, l]) => `<div class="stat"><b>${v}</b><span>${l}</span></div>`).join('');
 }
@@ -1133,9 +1162,9 @@ function renderPlanPanel() {
   sec.hidden = false;
   sec.innerHTML = `<p class="plan-sum"><b>${plan.labels.join(' · ')}</b> · ${plan.vehicleName}</p>
     <div class="btn-row plan-btns">
-      <button class="btn primary plan-play" type="button" data-plan="play">Reproducir</button>
-      <button class="btn" type="button" data-plan="frame">Encuadrar</button>
-      <a class="btn" href="index.html#plan">Editar en el mapa</a>
+      <button class="btn primary plan-play" type="button" data-plan="play">Play</button>
+      <button class="btn" type="button" data-plan="frame">Frame</button>
+      <a class="btn" href="index.html#plan">Edit on the map</a>
     </div>`;
 }
 
@@ -1192,16 +1221,16 @@ function renderPlanPoint(s) {
   const sat = satAt(s.lon, s.lat);
   renderHero({
     img: sat.css,
-    caption: `${sat.caption} · posición actual`,
-    title: 'Mi ruta',
+    caption: `${sat.caption} · current position`,
+    title: 'My route',
     meta: `${plan.labels.join(' · ')} · ${plan.vehicleName}`,
     meta2: `${clock(s.t)} · ${latLon({ lat: s.lat, lon: s.lon })}`,
     status: { cls: ['ok', 'warn', 'bad'][rep.level], text: rep.verdict },
-    from: 'A · origen',
-    to: 'B · destino',
+    from: 'A · start',
+    to: 'B · destination',
     frac: s.dist / (plan.dist.at(-1) || 1),
-    left: `${fmt.km(s.dist)} de ${fmt.km(plan.dist.at(-1))}`,
-    right: `llegada en ${formatHours(Math.max(0, plan.hours.at(-1) - s.t))}`,
+    left: `${fmt.km(s.dist)} of ${fmt.km(plan.dist.at(-1))}`,
+    right: `arrival in ${formatHours(Math.max(0, plan.hours.at(-1) - s.t))}`,
   });
   const slope = plan.slope[s.idx] ?? 0;
   const cls = tiltClass(slope);
@@ -1215,21 +1244,21 @@ function renderPlanPoint(s) {
   const left = Math.max(0, plan.hours.at(-1) - s.t);
   el.innerHTML = `
     <div class="metrics">
-      ${metricHTML({ k: 'Elevación', v: num(s.elev), unit: 'm', sub: 'DTM CTX 20 m' })}
-      ${metricHTML({ k: 'Recorrido', v: num(s.dist / 1000, 2), unit: 'km', sub: `de ${fmt.km(total)}` })}
-      ${metricHTML({ k: 'Pendiente terreno', v: num(slope, 1), unit: '°', sub: `límite ${num(plan.vehicle.maxSlope)}°`, cls })}
-      ${metricHTML({ k: 'Llegada en', v: formatHours(left), unit: '', sub: `de ${formatHours(plan.hours.at(-1))}` })}
+      ${metricHTML({ k: 'Elevation', v: num(s.elev), unit: 'm', sub: 'DTM CTX 20 m' })}
+      ${metricHTML({ k: 'Distance', v: num(s.dist / 1000, 2), unit: 'km', sub: `of ${fmt.km(total)}` })}
+      ${metricHTML({ k: 'Terrain slope', v: num(slope, 1), unit: '°', sub: `limit ${num(plan.vehicle.maxSlope)}°`, cls })}
+      ${metricHTML({ k: 'Arrival in', v: formatHours(left), unit: '', sub: `of ${formatHours(plan.hours.at(-1))}` })}
       ${metricHTML({
-        k: 'Frío nocturno',
+        k: 'Night cold',
         v: coldPct === null ? '…' : `${coldPct}`,
         unit: coldPct === null ? '' : '%',
-        sub: coldPct === null ? 'cargando THEMIS' : `más frío que el ${coldPct} % de la zona`,
+        sub: coldPct === null ? 'loading THEMIS' : `colder than ${coldPct}% of the area`,
       })}
       ${metricHTML({
-        k: 'Radiación est.',
+        k: 'Est. radiation',
         v: num(dose, 2),
-        unit: 'mSv/día',
-        sub: 'modelo · ver capa',
+        unit: 'mSv/day',
+        sub: 'model · see layer',
         extra: `<div class="meter"><i style="width:${pct}%;background:${rgbCss(rampRgb(RAD_RAMP, pct / 100))}"></i></div>`,
       })}
     </div>`;
@@ -1240,10 +1269,10 @@ function updateLive(s) {
   renderPlanPoint(s);
   const L = liveNumbers(s);
   const rows = [];
-  if (L.autoLeft !== null) rows.push(liveRow('Autonomía restante', formatHours(L.autoLeft), L.autoFrac, levelOf(L.autoFrac)));
-  if (L.battery !== null) rows.push(liveRow('Batería (aprox.)', `${num(L.battery * 100)} %`, L.battery, levelOf(L.battery)));
-  rows.push(liveRow('Dosis acumulada', `${num(L.dose, 3)} mSv`, L.doseFrac, 'accent'));
-  el.innerHTML = `<div class="live-head"><span>Telemetría de la misión</span><b class="mono">${clock(s.t)}</b></div>${rows.join('')}`;
+  if (L.autoLeft !== null) rows.push(liveRow('Range left', formatHours(L.autoLeft), L.autoFrac, levelOf(L.autoFrac)));
+  if (L.battery !== null) rows.push(liveRow('Battery (approx.)', `${num(L.battery * 100)}%`, L.battery, levelOf(L.battery)));
+  rows.push(liveRow('Accumulated dose', `${num(L.dose, 3)} mSv`, L.doseFrac, 'accent'));
+  el.innerHTML = `<div class="live-head"><span>Mission telemetry</span><b class="mono">${clock(s.t)}</b></div>${rows.join('')}`;
 }
 function renderMissionPanel() {
   if (!planDock) return;
@@ -1447,12 +1476,12 @@ const SUN_DIR = sun.position.clone().normalize();
 async function ensureRover({ quiet = false } = {}) {
   if (roverRig) return roverRig;
   const chip = $('tex-status');
-  if (!quiet) chip.textContent = 'Cargando el modelo de Perseverance (NASA)…';
+  if (!quiet) chip.textContent = 'Loading the Perseverance model (NASA)…';
   roverLoading ??= (async () => {
     const early = await earlyRover;
     roverModule ??= early?.m ?? await import('./rover.js');
     const rig = early ? await early.rig : await roverModule.loadRover('assets/rover/perseverance.glb', (k) => {
-      if (chip.textContent) chip.textContent = `Cargando el modelo de Perseverance (NASA)… ${Math.round(k * 100)} %`;
+      if (chip.textContent) chip.textContent = `Loading the Perseverance model (NASA)… ${Math.round(k * 100)}%`;
     });
     rig.root.visible = false;
     scene.add(rig.root);
@@ -1750,11 +1779,18 @@ function updateDriveCamera(dt, t = performance.now()) {
 // Vuelo de entrada a la vista de coche: desde donde estuviera la cámara general, una curva que baja por
 // detrás del rover hasta engancharse a la cámara de persecución. La niebla y el campo de visión pasan de
 // los de la vista general a los de a ras de suelo durante el vuelo.
+function startCineDrive(c, ramp) {
+  if (!c.autoplay || c.started) return;
+  c.started = true;
+  if (planDock && !planDock.player.playing) planDock.player.play({ ramp });
+}
 function cineStep(want, dt) {
   const c = drive.cine;
   c.t += dt;
   const k = Math.min(1, c.t / c.dur);
   const e = easeInOut(k);
+  // A partir del 55 % del vuelo el rover se pone en marcha (acelerando): la cámara llega con él ya en movimiento
+  if (k >= 0.55) startCineDrive(c, (c.dur - c.t) * 1000 + 900);
   const back = new THREE.Vector3(-Math.sin(drive.camYaw), 0, -Math.cos(drive.camYaw));
   const ctrl = drive.base.clone().addScaledVector(back, c.reach);
   ctrl.y = Math.max(ctrl.y + c.reach * 0.35, groundAt(ctrl.x, ctrl.z) + 20);
@@ -1779,6 +1815,7 @@ function cineStep(want, dt) {
     scene.fog.near = 600;
     scene.fog.far = 9000;
     c.done?.();
+    startCineDrive(c, 0);
   }
 }
 
@@ -2005,7 +2042,7 @@ function updateFlags() {
   Object.values(flags).forEach((f) => { f.visible = false; });
   if (!drive.mode) return;
   if (planDock) {
-    placeFlag(flags.a, plan.origin.lon, plan.origin.lat);
+    // Solo el destino: en el origen ya está el rover (la bandera verde estorbaba en el vuelo de entrada)
     placeFlag(flags.b, plan.dest.lon, plan.dest.lat);
   } else {
     placeFlag(flags.end, pts.at(-1).lon, pts.at(-1).lat);
@@ -2235,7 +2272,7 @@ hud.addEventListener('click', (e) => {
   if (e.target.closest('[data-more]')) { drive.hudMore = !drive.hudMore; renderHud(); }
 });
 const deg = (r) => `${num((r * 180) / Math.PI, 1)}°`;
-const GROUND_NAMES = { astro: 'Astronauta · ojos a 1,7 m', chase: 'Vista de coche', pov: 'POV · Navcam' };
+const GROUND_NAMES = { astro: 'Astronaut · eyes at 1.7 m', chase: 'Chase view', pov: 'POV · Navcam' };
 function renderHud() {
   const roverOn = drive.mode !== 'astro' && roverRig;
   const P = roverOn ? roverRig.pose : null;
@@ -2251,36 +2288,36 @@ function renderHud() {
   const pct = drive.pathTotal ? Math.min(100, (drive.progress / drive.pathTotal) * 100) : 0;
   const routeNote = planDock
     ? `${plan.labels.join(' · ')} · ${plan.vehicleName}`
-    : `Travesía real · sol ${p.sol} · parada ${num(state.idx + 1)} de ${num(pts.length)}`;
+    : `Actual traverse · sol ${p.sol} · stop ${num(state.idx + 1)} of ${num(pts.length)}`;
   const grid = roverOn
-    ? `<div><span>Cabeceo</span><b>${deg(P.pitch)}</b></div>
-       <div><span>Alabeo</span><b>${deg(P.roll)}</b></div>`
-    : `<div><span>Altitud</span><b>${num(terrainAt(lon, lat))} m</b></div>
-       <div><span>Pendiente</span><b>${num(slopeHere, 1)}°</b></div>`;
+    ? `<div><span>Pitch</span><b>${deg(P.pitch)}</b></div>
+       <div><span>Roll</span><b>${deg(P.roll)}</b></div>`
+    : `<div><span>Elevation</span><b>${num(terrainAt(lon, lat))} m</b></div>
+       <div><span>Slope</span><b>${num(slopeHere, 1)}°</b></div>`;
   hud.innerHTML = `
     <div class="dh-head"><span class="dh-mode">${GROUND_NAMES[drive.mode]}</span>
-      <button class="btn" type="button" data-exit>Salir · Esc</button></div>
+      <button class="btn" type="button" data-exit>Exit · Esc</button></div>
     <div class="dh-route"><p>${routeNote}</p></div>
     <div class="dh-grid">
       ${grid}
-      <div><span>Rumbo</span><b>${num(heading)}°</b></div>
-      <div><span>Velocidad</span><b>${planDock ? `${num(drive.speedKmh, 1)} km/h` : '—'}</b></div>
+      <div><span>Heading</span><b>${num(heading)}°</b></div>
+      <div><span>Speed</span><b>${planDock ? `${num(drive.speedKmh, 1)} km/h` : '—'}</b></div>
     </div>
     ${planDock ? (() => {
     const L = liveNumbers(planDock.sample);
-    const second = L.autoLeft !== null ? ['Autonomía', formatHours(L.autoLeft)] : L.battery !== null ? ['Batería', `${num(L.battery * 100)} %`] : ['Pendiente', `${num(L.slope, 1)}°`];
-    return `<div class="dh-grid dh-live"><div><span>Dosis acumulada</span><b>${num(L.dose, 3)} mSv</b></div><div><span>${second[0]}</span><b>${second[1]}</b></div></div>`;
+    const second = L.autoLeft !== null ? ['Range', formatHours(L.autoLeft)] : L.battery !== null ? ['Battery', `${num(L.battery * 100)}%`] : ['Slope', `${num(L.slope, 1)}°`];
+    return `<div class="dh-grid dh-live"><div><span>Accumulated dose</span><b>${num(L.dose, 3)} mSv</b></div><div><span>${second[0]}</span><b>${second[1]}</b></div></div>`;
   })() : ''}
-    <div class="dh-progress"><span>Recorrido</span><b>${fmt.km(drive.progress)} de ${fmt.km(drive.pathTotal)}</b><em><i style="width:${pct}%"></i></em></div>
-    ${roverOn ? `<button class="dh-more" type="button" data-more aria-expanded="${!!drive.hudMore}">${drive.hudMore ? 'Ocultar suspensión' : 'Ver suspensión (rocker-bogie)'}</button>` : ''}
+    <div class="dh-progress"><span>Distance</span><b>${fmt.km(drive.progress)} of ${fmt.km(drive.pathTotal)}</b><em><i style="width:${pct}%"></i></em></div>
+    ${roverOn ? `<button class="dh-more" type="button" data-more aria-expanded="${!!drive.hudMore}">${drive.hudMore ? 'Hide suspension' : 'Show suspension (rocker-bogie)'}</button>` : ''}
     ${roverOn && drive.hudMore ? `<div class="dh-susp">
-      <div><span>Balancín izq.</span><em>${bar(P.rocker.p)}</em><b>${deg(P.rocker.p)}</b></div>
-      <div><span>Balancín dcho.</span><em>${bar(P.rocker.n)}</em><b>${deg(P.rocker.n)}</b></div>
-      <div><span>Bogie izq.</span><em>${bar(P.bogie.p)}</em><b>${deg(P.bogie.p)}</b></div>
-      <div><span>Bogie dcho.</span><em>${bar(P.bogie.n)}</em><b>${deg(P.bogie.n)}</b></div>
+      <div><span>Left rocker</span><em>${bar(P.rocker.p)}</em><b>${deg(P.rocker.p)}</b></div>
+      <div><span>Right rocker</span><em>${bar(P.rocker.n)}</em><b>${deg(P.rocker.n)}</b></div>
+      <div><span>Left bogie</span><em>${bar(P.bogie.p)}</em><b>${deg(P.bogie.p)}</b></div>
+      <div><span>Right bogie</span><em>${bar(P.bogie.n)}</em><b>${deg(P.bogie.n)}</b></div>
     </div>` : ''}
-    ${planDock ? `<div class="dh-rate"><span>Velocidad de reproducción</span><div class="seg">${rates.map((r) => `<button type="button" data-rate="${r}" aria-pressed="${drive.rate === r}">×${num(r)}</button>`).join('')}</div></div>`
-    : roverOn ? `<p class="dh-note">Medido por el rover en esta parada: cabeceo ${num(p.pitch_deg, 1)}°, alabeo ${num(p.roll_deg, 1)}°. La simulación usa el relieve de 20 m.</p>` : ''}`;
+    ${planDock ? `<div class="dh-rate"><span>Playback speed</span><div class="seg">${rates.map((r) => `<button type="button" data-rate="${r}" aria-pressed="${drive.rate === r}">×${num(r)}</button>`).join('')}</div></div>`
+    : roverOn ? `<p class="dh-note">Measured by the rover at this stop: pitch ${num(p.pitch_deg, 1)}°, roll ${num(p.roll_deg, 1)}°. The simulation uses the 20 m terrain.</p>` : ''}`;
 }
 
 // Velocidad de reproducción de la ruta planificada a ras de suelo: visualmente ~15 m/s (5 m/s a pie),
@@ -2314,7 +2351,7 @@ async function enterDrive(mode, { cinematic = true, long = false, autoplay = fal
     cine = {
       t: 0, dur: long ? 4.4 : 2.8, pos, look: keepAlt(controls.target), fov: camera.fov,
       fog: [scene.fog.near, scene.fog.far], reach: THREE.MathUtils.clamp(dist * 0.12, 60, 400),
-      done: autoplay ? () => { if (planDock && !planDock.player.playing) planDock.player.play(); } : null,
+      autoplay, // el rover arranca durante el tramo final del vuelo, acelerando (sin parada al llegar)
     };
   }
   if (!drive.mode) {
@@ -2368,7 +2405,7 @@ async function enterDrive(mode, { cinematic = true, long = false, autoplay = fal
     camera.fov = cine.fov;
     camera.updateProjectionMatrix();
   } else if (autoplay && planDock && !planDock.player.playing) {
-    planDock.player.play();
+    planDock.player.play({ ramp: 1200 });
   }
 }
 
@@ -2463,7 +2500,7 @@ function toggleDay() {
   timeOfDay.playing = !timeOfDay.playing;
   timeOfDay.last = null;
   if (timeOfDay.playing && timeOfDay.hour >= 19.4) setHour(5.5);
-  $('day-play').textContent = timeOfDay.playing ? 'Pausar' : 'Ver un sol';
+  $('day-play').textContent = timeOfDay.playing ? 'Pause' : 'Play a sol';
   $('day-play').setAttribute('aria-pressed', String(timeOfDay.playing));
 }
 $('hour').addEventListener('input', (e) => {
@@ -2604,8 +2641,8 @@ $('nav-home').addEventListener('click', homeView);
 // Ayuda de uso: aparece en la vista General hasta que se mueve el mapa por primera vez
 const navHint = $('nav-hint');
 navHint.innerHTML = matchMedia('(pointer: coarse)').matches
-  ? '<b>Un dedo</b> mover · <b>Dos dedos</b> girar y acercar'
-  : '<b>Arrastrar</b> mover · <b>Botón derecho</b> girar · <b>Rueda</b> acercar';
+  ? '<b>One finger</b> pan · <b>Two fingers</b> rotate and zoom'
+  : '<b>Drag</b> pan · <b>Right button</b> rotate · <b>Wheel</b> zoom';
 let hintTimer = 0;
 function showNavHint() {
   if (document.body.dataset.navUsed) return;
@@ -2649,7 +2686,7 @@ function preloadDrive() {
     objs.forEach((o, k) => { o.visible = was[k]; });
     sun.castShadow = shadow;
     await done;
-  })().catch((err) => { console.warn('Precarga del rover:', err); preloadPromise = null; });
+  })().catch((err) => { console.warn('Rover preload failed:', err); preloadPromise = null; });
   return preloadPromise;
 }
 
@@ -2666,7 +2703,8 @@ function detailMaterial(map) {
     polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
   });
   applyGroundDetail(mat, { sizeU: DETAIL.size, sizeV: DETAIL.size, fine: 6, coarse: 40, fade: [50, 350], fadeCoarse: [150, 700], normalScale: 0 });
-  mat.customProgramCacheKey = () => 'ground-detail-general';
+  // Con capas de datos el detalle HiRISE se tiñe igual que el terreno (nítido de cerca y con la capa)
+  detail.layer = addLayerTint(mat, 'ground-detail-general-layer');
   detail.mat = mat;
   return mat;
 }
@@ -2696,7 +2734,12 @@ async function buildDetail(cx, cz) {
 }
 frameHooks.add(() => {
   const close = camera.position.distanceTo(controls.target) < DETAIL.near;
-  const on = !state.drive && state.layer === 'sat' && close;
+  const on = !state.drive && state.layer !== 'color' && close;
+  if (detail.layer) {
+    const data = state.layer !== 'sat';
+    detail.layer.uLayerMap.value = data ? LAYERS[state.layer].texture ?? texture : texture;
+    detail.layer.uLayerMix.value = data && LAYERS[state.layer].texture ? 0.85 : 0;
+  }
   if (detail.mesh) detail.mesh.visible = on;
   if (!on || detail.busy) return;
   const tg = controls.target;
@@ -2712,6 +2755,8 @@ frameHooks.add(() => {
     if (old !== map) old.dispose();
     if (detail.mesh) { world.remove(detail.mesh); detail.mesh.geometry.dispose(); }
     Object.assign(detail, { mesh, cx, cz });
+    const S = DETAIL.size;
+    detail.layer?.uLayerUV.value.set((cx - S / 2 + widthM / 2) / widthM, (heightM / 2 - cz - S / 2) / heightM, S / widthM, S / heightM);
     world.add(mesh);
   }).catch((err) => console.warn('Detalle HiRISE:', err)).finally(() => { detail.busy = false; });
 });
@@ -2773,7 +2818,7 @@ if (wantsIntro) {
   import('./intro.js').then(({ runIntro }) => runIntro({
     THREE, camera, controls, stage, onFrame,
     onTour: () => document.querySelector('[data-present]')?.click(),
-    meta: `Cráter Jezero · ${num(Math.abs(latC), 1)}° N ${num(lonC, 1)}° E · relieve real de ${dem.resolution_m} m · ruta de ${fmt.km(plan.stats.distance_m)}`,
+    meta: `Jezero Crater · ${num(Math.abs(latC), 1)}° N ${num(lonC, 1)}° E · real ${dem.resolution_m} m terrain · ${fmt.km(plan.stats.distance_m)} route`,
   }));
 }
 
@@ -2790,7 +2835,7 @@ const markDirty = () => {
 };
 const texStatus = $('tex-status');
 const texTimer = setInterval(() => {
-  texStatus.textContent = `Cargando imagen: ${progress.done}/${progress.total} teselas`;
+  texStatus.textContent = `Loading imagery: ${progress.done}/${progress.total} tiles`;
 }, 250);
 for (const src of TEXTURES) {
   // eslint-disable-next-line no-await-in-loop

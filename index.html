@@ -1,10 +1,10 @@
 <!doctype html>
-<html lang="es">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>ARES · Mapa de ruta</title>
-  <meta name="description" content="Planificación de travesías en Marte: rutas A → B sobre el relieve real del cráter Jezero.">
+  <title>ARES · Route map</title>
+  <meta name="description" content="Mars traverse planning: A → B routes over the real terrain of Jezero Crater.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@300;400;500;600&family=Barlow+Condensed:wght@500;600&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
@@ -15,7 +15,7 @@
 </head>
 <body class="page-map map-empty">
   <header class="topbar">
-    <a class="brand" href="index.html" style="text-decoration:none" aria-label="ARES, mapa de ruta">
+    <a class="brand" href="index.html" style="text-decoration:none" aria-label="ARES, route map">
       <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true">
         <circle cx="12" cy="12" r="10.5" fill="none" stroke="#2f3640"/>
         <circle cx="12" cy="12" r="7" fill="#9c4428"/>
@@ -23,49 +23,49 @@
         <circle cx="20" cy="10.5" r="1.7" fill="#ff6a3d"/>
       </svg>
       <span class="brand-name">ARES</span>
-      <span class="brand-sub">Cráter Jezero · planificador de travesías</span>
+      <span class="brand-sub">Jezero Crater · traverse planner</span>
     </a>
-    <nav class="viewtabs" aria-label="Vista">
-      <a href="index.html" aria-current="page">Mapa</a>
-      <a id="to-other-view" href="3d.html">Terreno 3D</a>
+    <nav class="viewtabs" aria-label="View">
+      <a href="index.html" aria-current="page">Map</a>
+      <a id="to-other-view" href="3d.html">3D Terrain</a>
     </nav>
     <button class="btn primary tour-launch" type="button" data-present>
       <svg width="12" height="12" viewBox="0 0 14 14" aria-hidden="true"><path d="M3 1.8v10.4L12 7z" fill="currentColor"/></svg>
-      Presentación
+      Presentation
     </button>
     <div class="stats" id="stats"></div>
   </header>
 
   <main class="stage">
-    <div id="map" aria-label="Mapa de Marte"></div>
+    <div id="map" aria-label="Map of Mars"></div>
 
-    <aside class="float float-left" aria-label="Capas y planificador">
+    <aside class="float float-left" aria-label="Layers and planner">
       <div id="panel-layers">
       <section class="sec" id="sec-overlays">
-        <h2 class="sec-title">Sobre el relieve MOLA</h2>
+        <h2 class="sec-title">Over MOLA relief</h2>
         <label class="layer">
           <input type="radio" name="layer2d" value="ctx">
           <span class="thumb" data-thumb="ctx"></span>
-          <span><span class="name">CTX</span><span class="meta">MRO controlado · ~6 m/px</span></span>
+          <span><span class="name">CTX</span><span class="meta">MRO controlled · ~6 m/px</span></span>
           <span></span>
         </label>
         <label class="layer">
           <input type="radio" name="layer2d" value="hirise" checked>
           <span class="thumb" data-thumb="hirise"></span>
-          <span><span class="name">HiRISE</span><span class="meta">MRO controlado · 25 cm/px (CTX donde no hay)</span></span>
+          <span><span class="name">HiRISE</span><span class="meta">MRO controlled · 25 cm/px (CTX elsewhere)</span></span>
           <span></span>
         </label>
         <label class="layer">
           <input type="radio" name="layer2d" value="elev">
           <span class="thumb" data-thumb="elev"></span>
-          <span><span class="name">Altura</span><span class="meta">DTM CTX · 20 m</span></span>
+          <span><span class="name">Elevation</span><span class="meta">DTM CTX · 20 m</span></span>
           <span></span>
         </label>
         <div class="layer-legend" id="elev-legend" hidden></div>
         <label class="layer">
           <input type="radio" name="layer2d" value="slope">
           <span class="thumb" data-thumb="slope"></span>
-          <span><span class="name">Pendiente</span><span class="meta">DTM CTX · escala ~60 m</span></span>
+          <span><span class="name">Slope</span><span class="meta">DTM CTX · ~60 m scale</span></span>
           <span></span>
         </label>
         <div class="layer-legend" id="slope-legend" hidden>
@@ -74,7 +74,7 @@
         <label class="layer">
           <input type="radio" name="layer2d" value="cold">
           <span class="thumb" data-thumb="cold"></span>
-          <span><span class="name">Frío nocturno</span><span class="meta">THEMIS IR noche · relativo</span></span>
+          <span><span class="name">Night cold</span><span class="meta">THEMIS night IR · relative</span></span>
           <span></span>
         </label>
         <div class="layer-legend" id="cold-legend" hidden></div>
@@ -82,12 +82,12 @@
 
       <section class="sec" id="sec-sources">
         <details class="method">
-          <summary>Fuentes de datos</summary>
+          <summary>Data sources</summary>
           <ul>
-            <li>Teselas: JPL Mars Trek (MOLA, Viking, mosaicos controlados CTX y HiRISE de Jezero, THEMIS).</li>
-            <li>Relieve: DTM CTX controlado de 20 m, Mars 2020 TRN (USGS Astrogeology).</li>
-            <li>Ruta y paradas: visor MMGIS de NASA (M20_waypoints).</li>
-            <li>Fotos: API pública de imágenes de Perseverance.</li>
+            <li>Tiles: JPL Mars Trek (MOLA, Viking, controlled CTX and HiRISE mosaics of Jezero, THEMIS).</li>
+            <li>Terrain: 20 m controlled CTX DTM, Mars 2020 TRN (USGS Astrogeology).</li>
+            <li>Route and stops: NASA MMGIS viewer (M20_waypoints).</li>
+            <li>Photos: public Perseverance image API.</li>
           </ul>
         </details>
       </section>
@@ -95,30 +95,30 @@
 
     </aside>
 
-    <aside class="float float-right plan-side" aria-label="Planificador de rutas">
+    <aside class="float float-right plan-side" aria-label="Route planner">
       <div id="insp-hero" class="hero"></div>
       <div id="panel-plan">
         <section class="sec" id="plan-routes-sec">
-          <h2 class="sec-title">Rutas</h2>
+          <h2 class="sec-title">Routes</h2>
           <div id="plan-results"></div>
         </section>
 
         <section class="sec">
-          <h2 class="sec-title">Trayecto</h2>
+          <h2 class="sec-title">Trip</h2>
           <div id="plan-points"></div>
           <p id="plan-status" class="plan-status" role="status"></p>
         </section>
 
         <section class="sec" id="sec-howto">
           <details class="method">
-            <summary>Cómo calcula</summary>
+            <summary>How it works</summary>
             <ul>
-              <li>Vehículo: rover presurizado tipo SEV de NASA · 8 km/h en llano · pendiente máx. 18° · 72 h · batería 60 kWh (valores supuestos).</li>
-              <li>Algoritmo A* sobre el DTM CTX: celdas de 20 m, 8 direcciones.</li>
-              <li>Prohibidas las celdas con pendiente (a escala de ~60 m) por encima del máximo del vehículo.</li>
-              <li>Velocidad según la pendiente del tramo (a pie: función de Tobler) y la rugosidad del terreno.</li>
-              <li>Más rápida: minimiza el tiempo. Más segura: penaliza pendiente y rugosidad. Menos energía: rodadura y desnivel.</li>
-              <li>No ve rocas ni escalones de menos de ~20 m: para una salida real haría falta el DTM HiRISE de 1 m.</li>
+              <li>Vehicle: NASA SEV-type pressurized rover · 8 km/h on flat ground · max slope 18° · 72 h · 60 kWh battery (assumed values).</li>
+              <li>A* search over the CTX DTM: 20 m cells, 8 directions.</li>
+              <li>Cells whose slope (at ~60 m scale) exceeds the vehicle maximum are off-limits.</li>
+              <li>Speed depends on segment slope (on foot: Tobler's function) and terrain roughness.</li>
+              <li>Fastest: minimizes time. Safest: penalizes slope and roughness. Least energy: rolling resistance and climb.</li>
+              <li>Rocks and steps under ~20 m are invisible to it: a real sortie would need the 1 m HiRISE DTM.</li>
             </ul>
           </details>
         </section>

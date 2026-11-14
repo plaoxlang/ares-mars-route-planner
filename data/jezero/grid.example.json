@@ -1,10 +1,62 @@
-{
-  "region": "Jezero (EJEMPLO FICTICIO; no son datos del terreno)",
-  "crs": "IAU_2000:104905",
-  "rows": 3,
-  "cols": 4,
-  "transform": { "originX": 0, "originY": 0, "pixelWidth": 50, "pixelHeight": -50 },
-  "risk": [[1, 2, 3, 2], [2, 8, 4, 1], [1, 2, 2, 1]],
-  "timeSeconds": [[60, 62, 75, 63], [62, 90, 78, 60], [59, 61, 62, 60]],
-  "blocked": [[false, false, false, false], [false, false, false, false], [false, false, false, false]]
-}
+[
+  {
+    "cell": 0,
+    "row": 0,
+    "col": 0,
+    "lon_min": 137.352761,
+    "lat_min": -4.826023,
+    "lon_max": 137.356626,
+    "lat_max": -4.816548,
+    "risk": 0,
+    "points": 0,
+    "traversable": true,
+    "elev_mean": null,
+    "elev_min": null,
+    "elev_max": null
+  },
+  {
+    "cell": 1,
+    "row": 0,
+    "col": 1,
+    "lon_min": 137.356626,
+    "lat_min": -4.826023,
+    "lon_max": 137.360491,
+    "lat_max": -4.816548,
+    "risk": 2,
+    "points": 0,
+    "traversable": true,
+    "elev_mean": null,
+    "elev_min": null,
+    "elev_max": null
+  },
+  {
+    "cell": 2,
+    "row": 1,
+    "col": 0,
+    "lon_min": 137.352761,
+    "lat_min": -4.835498,
+    "lon_max": 137.356626,
+    "lat_max": -4.826023,
+    "risk": null,
+    "points": 0,
+    "traversable": false,
+    "elev_mean": null,
+    "elev_min": null,
+    "elev_max": null
+  },
+  {
+    "cell": 3,
+    "row": 1,
+    "col": 1,
+    "lon_min": 137.356626,
+    "lat_min": -4.835498,
+    "lon_max": 137.360491,
+    "lat_max": -4.826023,
+    "risk": 1,
+    "points": 0,
+    "traversable": true,
+    "elev_mean": null,
+    "elev_min": null,
+    "elev_max": null
+  }
+]

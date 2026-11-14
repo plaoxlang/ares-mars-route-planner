@@ -1,0 +1,7 @@
+{
+  "downloadedAt": "2026-11-14T08:53:38.981Z",
+  "sources": {
+    "msl_waypoints.json": "https://mars.nasa.gov/mmgis-maps/MSL/Layers/json/MSL_waypoints.json",
+    "msl_traverse.json": "https://mars.nasa.gov/mmgis-maps/MSL/Layers/json/MSL_traverse.json"
+  }
+}

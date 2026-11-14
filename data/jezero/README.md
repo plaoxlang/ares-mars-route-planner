@@ -11,6 +11,8 @@ Ruta de **Perseverance (Mars 2020)** y relieve del cráter Jezero. Coordenadas e
 | `elevation_waypoints.csv` | Lo mismo en CSV | 0,1 MB |
 | `dem_ctx_20m.bin` | Relieve: DTM CTX controlado de 20 m recortado a la zona de la ruta (966 × 475 px) | 0,9 MB |
 | `dem_ctx_20m.json` | Extensión, tamaño, escala y estadísticas del relieve | — |
+| `grid.json` | Cuadrícula de costes para A*: una celda por objeto, con coordenadas, riesgo y `traversable` (lo genera el script del equipo) | — |
+| `grid.example.json` | Ejemplo ficticio del contrato; no usar como datos reales | — |
 
 ### `elevation_waypoints.json`
 

@@ -1,0 +1,10 @@
+{
+  "region": "Jezero (EJEMPLO FICTICIO; no son datos del terreno)",
+  "crs": "IAU_2000:104905",
+  "rows": 3,
+  "cols": 4,
+  "transform": { "originX": 0, "originY": 0, "pixelWidth": 50, "pixelHeight": -50 },
+  "risk": [[1, 2, 3, 2], [2, 8, 4, 1], [1, 2, 2, 1]],
+  "timeSeconds": [[60, 62, 75, 63], [62, 90, 78, 60], [59, 61, 62, 60]],
+  "blocked": [[false, false, false, false], [false, false, false, false], [false, false, false, false]]
+}

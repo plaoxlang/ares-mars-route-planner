@@ -1,7 +1,7 @@
 # ares-mars-route-planner
 Mars route planning for the NASA Space Apps Challenge
 
-**ARES** es un prototipo de mapa de ruta para una excursión humana en Marte, centrado en el **cráter Jezero** y construido sobre la travesía real de **Perseverance**: 708 paradas y 45,2 km, de −2.586 m a −1.786 m. Todavía no planifica rutas. Reúne y muestra los datos que necesitará un algoritmo de rutas: relieve real, pendiente, frío nocturno y radiación estimada, además de la ruta de referencia del rover.
+**ARES** es un prototipo de mapa y planificador de rutas para excursiones humanas en Marte, centrado en el **cráter Jezero** y construido sobre la travesía real de **Perseverance**: 708 paradas y 45,2 km, de −2.586 m a −1.786 m. Calcula rutas entre dos puntos según el vehículo y sus especificaciones, como un "Google Maps" marciano. También muestra los datos en que se basan: relieve real, pendiente, frío nocturno y radiación estimada.
 
 ## Arrancar
 
@@ -33,6 +33,41 @@ Después abre <http://localhost:8010>. Necesita conexión a internet: las tesela
   - **Radiación estimada**
 - En cada parada: pendiente del terreno, frío nocturno relativo (percentil en la zona) y dosis estimada.
 
+**Planificador de rutas** (pestaña *Planificar ruta* del mapa 2D): como Google Maps, pero en Jezero.
+- Pulsa el origen (A) y el destino (B) en el mapa, o pon el origen en la parada actual del rover. Los pines se pueden arrastrar.
+- Elige vehículo. Sus especificaciones se pueden editar y la ruta se recalcula al momento:
+
+  | Vehículo | Pendiente máx. | Velocidad en llano | Autonomía | Batería |
+  |---|---|---|---|---|
+  | Astronauta a pie | 18° | 3 km/h | 8 h | — |
+  | Rover no presurizado (tipo Apollo LRV) | 22° | 10 km/h | 8 h | 8,7 kWh |
+  | Rover presurizado (tipo SEV de NASA) | 18° | 8 km/h | 72 h | 60 kWh (supuesto) |
+  | Rover robótico (tipo Perseverance) | 25° | 0,12 km/h | — | — |
+
+  Son valores de partida aproximados para el reto, no especificaciones oficiales.
+- Calcula hasta 3 alternativas: **más rápida**, **más segura** (evita sobre todo pendientes de más de 8°) y **menos energía** (o *menos esfuerzo* a pie). Cada una trae tiempo, distancia, desnivel, pendiente máxima, tramo empinado, terreno irregular, energía y % de batería, con su perfil de elevación. Avisa si se pasa de autonomía o de batería, o si no hay ruta posible.
+- **Reproducir la ruta:** con una ruta elegida, la barra de tiempo inferior pasa a esa ruta.
+  - Play (o espacio) mueve el vehículo a la velocidad estimada, comprimida en 12–40 s.
+  - La lectura muestra el reloj de misión (`T+h:mm`), los km recorridos, la altitud y el factor de aceleración.
+  - El perfil se puede arrastrar y ← → avanzan o retroceden un 2 %.
+- **Pasar entre vistas:** la ruta elegida se guarda en el navegador (`localStorage`).
+  - *Ver en 3D* (o la pestaña *Terreno 3D*) abre `3d.html#plan`: la ruta en azul sobre el relieve, pines A/B, panel con sus datos y play con la cámara siguiendo al vehículo.
+  - *Editar en el mapa* vuelve a `index.html#plan` con los mismos puntos, vehículo y alternativa.
+- Por dentro:
+  - A\* sobre el DTM de 20 m: unas 460.000 celdas, 8 direcciones. Corre en un Web Worker y tarda ~0,1–0,5 s.
+  - Las celdas con más pendiente que el máximo del vehículo quedan prohibidas.
+  - La velocidad depende de la pendiente del tramo (a pie, con la función de Tobler) y de la rugosidad del terreno.
+  - La energía sale de la rodadura más el desnivel, con g = 3,721 m/s².
+- **Validación con la ruta real de Perseverance:** en 27 tramos de ~1,5 km, el perfil "rover robótico" se separa del camino real una mediana de **55 m** (unas 3 celdas). En el 85 % de los tramos la desviación media es menor de 100 m. El recorrido real es más largo (1,8 veces la línea recta) porque el rover se desvía para hacer ciencia.
+- **Limitación:** con 20 m por celda no se ven rocas ni escalones pequeños. Para una salida real habría que usar el DTM HiRISE de 1 m de la zona.
+
+**Tour guiado** (botón *Tour guiado* en las dos vistas, o directamente `3d.html#tour`): un recorrido de ~3 minutos en 9 capítulos.
+- La cámara vuela sobre Jezero y las capas cambian con fundidos.
+- Etiquetas ancladas al terreno marcan el aterrizaje, los puntos más bajo y más alto, la subida más dura y la inclinación máxima. Salen de los propios datos.
+- Recorre en cámara rápida la ruta de Perseverance con contadores en directo y acaba en la vista de astronauta, en el borde del cráter.
+- Narración opcional en español con la voz del navegador (Web Speech API). Si no hay voz, avanza con tiempo de lectura.
+- Teclado: ← → para cambiar de capítulo, espacio para pausar, Esc para salir.
+
 Las dos vistas comparten la parada seleccionada (`#i=123` en la URL). Teclado: ← → para cambiar de parada; espacio para reproducir.
 
 ### Limitaciones a tener en cuenta
@@ -47,6 +82,10 @@ Las dos vistas comparten la parada seleccionada (`#i=123` en la URL). Teclado: �
 |---|---|
 | `index.html`, `app.js` | Mapa 2D |
 | `3d.html`, `scene3d.js` | Vista 3D: malla del relieve, capas, radiación estimada |
+| `planner.js` | Planificador: vehículos, puntos A/B, rutas en el mapa, fichas de resultados |
+| `planner-worker.js` | Motor A* en un Web Worker: pendiente, rugosidad, velocidad, energía y estadísticas |
+| `route-player.js` | Ruta compartida entre vistas (guardar/cargar) y su reproducción en la barra de tiempo |
+| `tour.js` | Tour guiado: guion, vuelos de cámara, etiquetas, narración (se carga solo al pedirlo) |
 | `dem.js` | Carga del DTM, interpolación, pendiente, sombreado |
 | `shared.js` | Configuración de la zona (`SITE`), utilidades, inspector de parada, perfil/barra de tiempo |
 | `styles.css` | Estilos (tema oscuro, IBM Plex) |

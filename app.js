@@ -8,6 +8,8 @@ import {
   renderInspector, metricHTML, CLIMATE_NOTE, renderRouteLegend, buildProfile, setPlayButton,
 } from './shared.js';
 import { loadDem, terrainDerivatives, pixelCanvas } from './dem.js';
+import { setupPlanner } from './planner.js';
+import { mountPlanDock, loadPlan, PLAN_COLOR } from './route-player.js';
 
 // Mars Trek sirve teselas en plate carrée (EPSG:104905), que encaja con la rejilla
 // EPSG:4326 de Leaflet (zoom 0 = 2×1 teselas). Solo cambiamos el radio para que
@@ -183,6 +185,66 @@ document.querySelectorAll('[data-overlay]').forEach((sw) => sw.addEventListener(
   keepRouteOnTop();
 }));
 
+// ---------- Planificador de rutas ----------
+// Con una ruta elegida en la pestaña "Planificar", la barra de tiempo pasa a esa ruta:
+// play recorre la ruta con un vehículo a la velocidad estimada (comprimida).
+const planVehicle = {
+  done: L.polyline([], { color: '#ffffff', weight: 3, opacity: 0.95, interactive: false }),
+  halo: L.circleMarker([0, 0], { radius: 15, weight: 1, color: PLAN_COLOR, opacity: 0.7, fill: false, interactive: false }),
+  dot: L.circleMarker([0, 0], { radius: 7, weight: 3, color: '#fff', fillColor: PLAN_COLOR, fillOpacity: 1, interactive: false }),
+};
+let planDock = null;
+let planTab = false;
+
+function setDockMode() {
+  const plan = planTab ? planner.current() : null;
+  planDock?.destroy();
+  planDock = null;
+  $('profile-wrap').hidden = !!plan;
+  $('plan-profile-wrap').hidden = !plan;
+  document.querySelector('.dock').classList.toggle('plan-mode', !!plan);
+  if (plan) {
+    if (state.playing) togglePlay(); // pausa la ruta de Perseverance
+    Object.values(planVehicle).forEach((l) => l.addTo(map));
+    planDock = mountPlanDock({
+      wrap: $('plan-profile-wrap'),
+      route: plan,
+      colorAt: (p) => COLORS[tiltClass(p.slope)],
+      playBtn: $('play'),
+      labelEl: $('slider-label'),
+      subEl: $('readout-sub'),
+      onSample(s) {
+        const ll = [s.lat, s.lon];
+        planVehicle.dot.setLatLng(ll);
+        planVehicle.halo.setLatLng(ll);
+        planVehicle.done.setLatLngs([...plan.latlngs.slice(0, s.seg + 1), ll]);
+        if (planDock?.player.playing && !map.getBounds().pad(-0.15).contains(ll)) map.panTo(ll);
+      },
+    });
+    $('to-other-view').href = '3d.html#plan';
+  } else {
+    Object.values(planVehicle).forEach((l) => l.remove());
+    setPlayButton($('play'), !!state.playing);
+    renderReadout(state.idx);
+  }
+}
+
+const planner = setupPlanner({
+  L, map, dem, pts,
+  getStopIndex: () => state.idx,
+  onRouteChange: () => setDockMode(),
+  onPlay: () => planDock?.player.toggle(),
+});
+document.querySelectorAll('[data-tab]').forEach((b) => b.addEventListener('click', () => {
+  const tab = b.dataset.tab;
+  document.querySelectorAll('[data-tab]').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+  $('panel-layers').hidden = tab !== 'layers';
+  $('panel-plan').hidden = tab !== 'plan';
+  planTab = tab === 'plan';
+  planner.setActive(planTab);
+  setDockMode();
+}));
+
 // ---------- Perfil = barra de tiempo ----------
 const profile = buildProfile($('profile-wrap'), pts, {
   onPick: (i) => select(i, { pan: true }),
@@ -196,12 +258,24 @@ setPlayButton($('play'), false);
 $('play').addEventListener('click', togglePlay);
 document.addEventListener('keydown', (e) => {
   if (e.target.closest('input, select, textarea')) return;
-  if (e.key === 'ArrowRight') select(Math.min(state.idx + 1, pts.length - 1), { pan: true });
-  if (e.key === 'ArrowLeft') select(Math.max(state.idx - 1, 0), { pan: true });
+  if (planDock && (e.key === 'ArrowRight' || e.key === 'ArrowLeft')) {
+    const p = planDock.player;
+    p.seek(p.t + (e.key === 'ArrowRight' ? 1 : -1) * p.total * 0.02);
+  } else if (e.key === 'ArrowRight') select(Math.min(state.idx + 1, pts.length - 1), { pan: true });
+  else if (e.key === 'ArrowLeft') select(Math.max(state.idx - 1, 0), { pan: true });
   if (e.key === ' ') { e.preventDefault(); togglePlay(); }
 });
 
 select(indexFromHash(pts.length - 1), { pan: false });
+
+// Llegada desde la vista 3D con una ruta planificada (index.html#plan): se restaura.
+if (/plan/.test(location.hash)) {
+  const saved = loadPlan();
+  if (saved) {
+    document.querySelector('[data-tab="plan"]').click();
+    planner.restore(saved);
+  }
+}
 
 // ---------- Funciones ----------
 function select(i, { pan }) {
@@ -210,9 +284,7 @@ function select(i, { pan }) {
   state.rendered = true;
   const p = pts[i];
   slider.value = String(i);
-  $('slider-label').textContent = `Sol ${p.sol}`;
-  $('readout-sub').textContent = `${num(i + 1)} / ${num(pts.length)} · ${fmt.km(p.dist_total_m)}`;
-  $('to-other-view').href = `3d.html#i=${i}`;
+  if (!planDock) renderReadout(i);
   rover.setLatLng([p.lat, p.lon]);
   halo.setLatLng([p.lat, p.lon]);
   travelled.setLatLngs(pts.slice(0, i + 1).map((q) => [q.lat, q.lon]));
@@ -220,6 +292,14 @@ function select(i, { pan }) {
   profile.mark(i);
   renderStop(i);
   renderPhotos(p.sol);
+}
+
+// Lectura de la barra de tiempo en modo "ruta de Perseverance"
+function renderReadout(i) {
+  const p = pts[i];
+  $('slider-label').textContent = `Sol ${p.sol}`;
+  $('readout-sub').textContent = `${num(i + 1)} / ${num(pts.length)} · ${fmt.km(p.dist_total_m)}`;
+  $('to-other-view').href = `3d.html#i=${i}`;
 }
 
 function renderStop(i) {
@@ -243,6 +323,7 @@ function renderStop(i) {
 }
 
 function togglePlay() {
+  if (planDock) { planDock.player.toggle(); return; }
   if (state.playing) {
     clearInterval(state.playing);
     state.playing = null;

@@ -142,7 +142,9 @@ export function renderRouteLegend() {
 
 // ---------- Perfil de elevación = barra de tiempo ----------
 // Las etiquetas van en HTML (no en el SVG) para que no se deformen al estirar el gráfico.
-export function buildProfile(wrap, points, { onPick, colorAt }) {
+export function buildProfile(wrap, points, { onPick, colorAt, tip: tipText, color }) {
+  const accent = color ?? css('--accent');
+  const uid = Math.random().toString(36).slice(2, 8); // ids únicos: puede haber dos perfiles en la página
   const NS = 'http://www.w3.org/2000/svg';
   const W = 1000;
   const H = 100;
@@ -176,10 +178,10 @@ export function buildProfile(wrap, points, { onPick, colorAt }) {
   };
 
   const defs = el('defs', {});
-  const grad = el('linearGradient', { id: 'pfill', x1: 0, y1: 0, x2: 0, y2: 1 }, defs);
-  el('stop', { offset: 0, 'stop-color': css('--accent'), 'stop-opacity': 0.4 }, grad);
-  el('stop', { offset: 1, 'stop-color': css('--accent'), 'stop-opacity': 0.02 }, grad);
-  const clip = el('clipPath', { id: 'pclip' }, defs);
+  const grad = el('linearGradient', { id: `pfill-${uid}`, x1: 0, y1: 0, x2: 0, y2: 1 }, defs);
+  el('stop', { offset: 0, 'stop-color': accent, 'stop-opacity': 0.4 }, grad);
+  el('stop', { offset: 1, 'stop-color': accent, 'stop-opacity': 0.02 }, grad);
+  const clip = el('clipPath', { id: `pclip-${uid}` }, defs);
   const clipRect = el('rect', { x: 0, y: 0, width: 0, height: H }, clip);
 
   for (let k = 1; k <= 3; k++) {
@@ -191,8 +193,8 @@ export function buildProfile(wrap, points, { onPick, colorAt }) {
   const area = `${line}L${W},${base}L0,${base}Z`;
   el('path', { d: area, fill: 'rgba(255,255,255,0.035)' });
   el('path', { d: line, fill: 'none', stroke: css('--text-3'), 'stroke-width': 1.2, 'vector-effect': 'non-scaling-stroke' });
-  el('path', { d: area, fill: 'url(#pfill)', 'clip-path': 'url(#pclip)' });
-  el('path', { d: line, fill: 'none', stroke: css('--accent'), 'stroke-width': 1.8, 'vector-effect': 'non-scaling-stroke', 'clip-path': 'url(#pclip)' });
+  el('path', { d: area, fill: `url(#pfill-${uid})`, 'clip-path': `url(#pclip-${uid})` });
+  el('path', { d: line, fill: 'none', stroke: accent, 'stroke-width': 1.8, 'vector-effect': 'non-scaling-stroke', 'clip-path': `url(#pclip-${uid})` });
 
   // Banda de color bajo el perfil (inclinación o temperatura, según el modo de la ruta)
   const band = points.slice(1).map((p, k) => el('rect', {
@@ -203,15 +205,15 @@ export function buildProfile(wrap, points, { onPick, colorAt }) {
   recolor();
 
   const hover = el('line', { y1: 0, y2: base, stroke: css('--text-2'), 'stroke-width': 1, 'vector-effect': 'non-scaling-stroke', opacity: 0 });
-  const marker = el('line', { y1: 0, y2: base, stroke: css('--accent'), 'stroke-width': 1, 'vector-effect': 'non-scaling-stroke' });
+  const marker = el('line', { y1: 0, y2: base, stroke: accent, 'stroke-width': 1, 'vector-effect': 'non-scaling-stroke' });
 
   html('plabel', { left: '4px', top: '0' }, `${num(maxE)} m`);
   html('plabel', { left: '4px', bottom: '22px' }, `${num(minE)} m`);
-  const step = maxD > 30000 ? 10000 : 5000;
+  const step = maxD > 30000 ? 10000 : maxD > 12000 ? 5000 : maxD > 5000 ? 2000 : maxD > 2000 ? 1000 : 500;
   for (let d = step; d < maxD - step / 3; d += step) {
-    html('plabel', { left: `${(d / maxD) * 100}%`, bottom: '-14px', transform: 'translateX(-50%)' }, `${d / 1000} km`);
+    html('plabel', { left: `${(d / maxD) * 100}%`, bottom: '-14px', transform: 'translateX(-50%)' }, `${num(d / 1000, d % 1000 ? 1 : 0)} km`);
   }
-  const dot = html('pdot', {});
+  const dot = html('pdot', color ? { background: accent, boxShadow: `0 0 0 2px var(--panel-solid), 0 0 0 3px ${accent}` } : {});
   const tip = html('ptip', {});
 
   const nearest = (evt) => {
@@ -242,7 +244,7 @@ export function buildProfile(wrap, points, { onPick, colorAt }) {
     hover.setAttribute('opacity', 0.5);
     tip.style.left = `${(px / W) * 100}%`;
     tip.style.opacity = 1;
-    tip.textContent = `Sol ${p.sol} · ${fmt.m(p.elev_m)} · ${fmt.km(p.dist_total_m)}`;
+    tip.textContent = tipText ? tipText(p) : `Sol ${p.sol} · ${fmt.m(p.elev_m)} · ${fmt.km(p.dist_total_m)}`;
     if (dragging) onPick(i);
   });
   const end = () => { dragging = false; };

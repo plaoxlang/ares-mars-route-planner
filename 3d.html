@@ -35,6 +35,10 @@
       <a id="to-other-view" href="index.html">Mapa</a>
       <a href="3d.html" aria-current="page">Terreno 3D</a>
     </nav>
+    <button id="tour-btn" class="btn primary tour-launch" type="button">
+      <svg width="12" height="12" viewBox="0 0 14 14" aria-hidden="true"><path d="M3 1.8v10.4L12 7z" fill="currentColor"/></svg>
+      Tour guiado
+    </button>
     <div class="stats" id="stats"></div>
   </header>
 
@@ -55,6 +59,7 @@
     </div>
 
     <aside class="float float-left" aria-label="Capas y vista">
+      <section class="sec plan-sec" id="plan-sec" hidden></section>
       <section class="sec">
         <h2 class="sec-title">Capa del terreno</h2>
         <div id="layer" role="radiogroup" aria-label="Capa del terreno">
@@ -111,6 +116,7 @@
   <footer class="dock">
     <button id="play" class="btn icon play" type="button"></button>
     <div class="profile-wrap" id="profile-wrap"></div>
+    <div class="profile-wrap" id="plan-profile-wrap" hidden></div>
     <div class="readout" aria-live="polite">
       <div class="r1" id="slider-label"></div>
       <div class="r2" id="readout-sub"></div>

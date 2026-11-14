@@ -12,6 +12,7 @@ import {
   renderInspector, metricHTML, CLIMATE_NOTE, renderRouteLegend, buildProfile, setPlayButton,
 } from './shared.js';
 import { loadDem, terrainDerivatives, pixelCanvas, bilinear } from './dem.js';
+import { loadPlan, mountPlanDock, formatHours, PLAN_COLOR } from './route-player.js';
 
 // Textura: CTX como base y HiRISE encima (solo cubre parte de la zona).
 const TEXTURES = [
@@ -24,6 +25,9 @@ const EYE_HEIGHT_M = 1.8;
 
 const COLORS = colors();
 const state = { idx: 0, exag: 2, follow: true, astro: false, playing: null, layer: 'sat' };
+const wantsTour = /tour/.test(location.hash); // 3d.html#tour (desde el mapa 2D): ofrecer el tour al cargar
+const wantsPlan = /plan/.test(location.hash); // 3d.html#plan: mostrar la ruta planificada en el 2D
+let planDock = null; // barra de tiempo en modo "ruta planificada"
 
 // ---------- Carga de teselas ----------
 const progress = { done: 0, total: 0 };
@@ -354,6 +358,8 @@ const LAYERS = {
 async function setLayer(key) {
   const layer = LAYERS[key];
   state.layer = key;
+  const radio = document.querySelector(`input[name="layer"][value="${key}"]`);
+  if (radio) radio.checked = true; // por si la cambia el tour
   if (!layer.texture) {
     $('tex-status').textContent = 'Generando capa…';
     await new Promise(requestAnimationFrame); // deja pintar el aviso antes del cálculo
@@ -453,10 +459,10 @@ function setViewButton(id) {
   ['overview', 'top', 'astro'].forEach((b) => $(b).setAttribute('aria-pressed', String(b === id)));
 }
 
-function setAstroMode(on) {
+function setAstroMode(on, { showBeacon = true } = {}) {
   state.astro = on;
   rover.visible = !on;
-  beacon.visible = on;
+  beacon.visible = on && showBeacon;
   routeLines.forEach((l) => { l.visible = !on; });
   scene.background = on ? SKY.mars : SKY.space;
   scene.fog.color.copy(on ? SKY.mars : SKY.space);
@@ -507,12 +513,10 @@ function topView() {
   controls.update();
 }
 
-function astronautView() {
-  setAstroMode(true);
-  setViewButton('astro');
-  const i = state.idx;
+// Posición de los ojos de un astronauta en la parada i, mirando hacia la siguiente.
+function astroPose(i) {
   const p = pts[i];
-  const q = i < pts.length - 1 ? pts[i + 1] : pts[i - 1]; // mirar hacia la siguiente parada
+  const q = i < pts.length - 1 ? pts[i + 1] : pts[i - 1];
   const eye = worldPoint(p.lon, p.lat, EYE_HEIGHT_M + 2);
   const ahead = worldPoint(q.lon, q.lat);
   const dir = ahead.clone().sub(eye).setY(0);
@@ -520,10 +524,17 @@ function astronautView() {
   dir.normalize();
   const look = eye.clone().addScaledVector(dir, 300);
   look.y = worldPoint(p.lon + (q.lon - p.lon) * 3, p.lat + (q.lat - p.lat) * 3).y + EYE_HEIGHT_M;
-  camera.position.copy(eye);
-  controls.target.copy(look);
+  return { pos: eye, target: look, beacon: ahead };
+}
+
+function astronautView() {
+  setAstroMode(true);
+  setViewButton('astro');
+  const pose = astroPose(state.idx);
+  camera.position.copy(pose.pos);
+  controls.target.copy(pose.target);
   controls.update();
-  beacon.position.copy(ahead);
+  beacon.position.copy(pose.beacon);
 }
 
 function select(i, { moveCamera = true } = {}) {
@@ -531,11 +542,13 @@ function select(i, { moveCamera = true } = {}) {
   state.idx = i;
   const p = pts[i];
   $('slider').value = String(i);
-  $('slider-label').textContent = `Sol ${p.sol}`;
-  $('readout-sub').textContent = `${num(i + 1)} / ${num(pts.length)} · ${fmt.km(p.dist_total_m)}`;
-  $('to-other-view').href = `index.html#i=${i}`;
+  if (!planDock) {
+    $('slider-label').textContent = `Sol ${p.sol}`;
+    $('readout-sub').textContent = `${num(i + 1)} / ${num(pts.length)} · ${fmt.km(p.dist_total_m)}`;
+    $('to-other-view').href = `index.html#i=${i}`;
+    history.replaceState(null, '', `#i=${i}`);
+  }
   profile.mark(i);
-  history.replaceState(null, '', `#i=${i}`);
 
   rover.position.copy(worldPoint(p.lon, p.lat, ROUTE_LIFT_M * state.exag));
   doneGeo.instanceCount = Math.max(0, i);
@@ -554,10 +567,13 @@ function select(i, { moveCamera = true } = {}) {
 function setExaggeration(v) {
   state.exag = v;
   world.scale.y = v;
-  $('exag-label').textContent = `${v}×`;
+  $('exag-label').textContent = `${num(v, Number.isInteger(v) ? 0 : 1)}×`;
+  $('exag').value = String(v);
   const p = pts[state.idx];
   rover.position.copy(worldPoint(p.lon, p.lat, ROUTE_LIFT_M * v));
   if (state.astro) astronautView();
+  planViz?.refresh();
+  if (planDock) planDock.player.seek(planDock.player.t); // recoloca el vehículo de la ruta planificada
 }
 
 function renderStop(p, i) {
@@ -613,6 +629,7 @@ function renderStats(s) {
 }
 
 function togglePlay() {
+  if (planDock) { planDock.player.toggle(); return; }
   const btn = $('play');
   if (state.playing) {
     clearInterval(state.playing);
@@ -627,6 +644,152 @@ function togglePlay() {
     select(state.idx + 1);
   }, 110);
 }
+
+// ---------- Ruta planificada (viene del planificador del mapa 2D) ----------
+const plan = loadPlan();
+const planViz = plan ? (() => {
+  const lift = ROUTE_LIFT_M + 1;
+  const pos = [];
+  for (const [lat, lon] of plan.latlngs) {
+    const v = toLocal(lon, lat, terrainAt(lon, lat) + lift);
+    pos.push(v.x, v.y, v.z);
+  }
+  const lineGeo = new LineGeometry();
+  lineGeo.setPositions(pos);
+  const lineMat = new LineMaterial({ color: PLAN_COLOR, linewidth: 4 });
+  const line = new Line2(lineGeo, lineMat);
+  const doneGeoP = new LineGeometry();
+  doneGeoP.setPositions(pos.map((v, i) => (i % 3 === 1 ? v + 1 : v)));
+  const doneMatP = new LineMaterial({ color: '#ffffff', linewidth: 5 });
+  const done = new Line2(doneGeoP, doneMatP);
+  doneGeoP.instanceCount = 0;
+  world.add(line, done);
+
+  const beamMarker = (color, radius = 22) => {
+    const g = new THREE.Group();
+    const s = new THREE.Mesh(new THREE.SphereGeometry(radius, 20, 14), markerMat(color));
+    s.renderOrder = 11;
+    const b = new THREE.Mesh(new THREE.CylinderGeometry(4, 4, 500, 10), markerMat(color, 0.6));
+    b.position.y = 250;
+    b.renderOrder = 10;
+    g.add(s, b);
+    scene.add(g);
+    return g;
+  };
+  const pinA = beamMarker('#2fbf71');
+  const pinB = beamMarker('#ef5350');
+  const vehicle = beamMarker(PLAN_COLOR, 30);
+  const mats = [lineMat, doneMatP];
+  const setRes = () => mats.forEach((m) => m.resolution.set(host.clientWidth, host.clientHeight));
+  new ResizeObserver(setRes).observe(host);
+  setRes();
+
+  const viz = {
+    refresh() {
+      pinA.position.copy(worldPoint(plan.origin.lon, plan.origin.lat, 6 * state.exag));
+      pinB.position.copy(worldPoint(plan.dest.lon, plan.dest.lat, 6 * state.exag));
+    },
+    setVisible(on) {
+      [line, done, pinA, pinB, vehicle].forEach((o) => { o.visible = on; });
+    },
+    vehicle,
+    done: doneGeoP,
+  };
+  viz.setVisible(false);
+  return viz;
+})() : null;
+
+function frameRoute() {
+  const lats = plan.latlngs.map((p) => p[0]);
+  const lons = plan.latlngs.map((p) => p[1]);
+  const c = { lat: (Math.min(...lats) + Math.max(...lats)) / 2, lon: (Math.min(...lons) + Math.max(...lons)) / 2 };
+  const span = Math.max((Math.max(...lats) - Math.min(...lats)) * M_PER_DEG, (Math.max(...lons) - Math.min(...lons)) * M_PER_DEG * cosLat, 1500);
+  setAstroMode(false);
+  setViewButton('overview');
+  const target = worldPoint(c.lon, c.lat);
+  controls.target.copy(target);
+  camera.position.copy(target).add(new THREE.Vector3(span * 0.35, span * 0.75, span * 0.9));
+  controls.update();
+}
+
+function renderPlanPanel() {
+  const sec = $('plan-sec');
+  if (!plan) { sec.hidden = true; return; }
+  sec.hidden = false;
+  const s = plan.stats;
+  const summary = `<p class="plan-sum"><b>${plan.labels.join(' · ')}</b> · ${plan.vehicleName}</p>
+    <div class="plan-chips">
+      <div><b>${formatHours(s.hours)}</b><span>tiempo</span></div>
+      <div><b>${fmt.km(s.distance_m)}</b><span>distancia</span></div>
+      <div><b>+${num(s.ascent_m)} m</b><span>subida</span></div>
+      <div><b>${num(s.max_slope_deg, 1)}°</b><span>pend. máx.</span></div>
+    </div>`;
+  sec.innerHTML = planDock
+    ? `<h2 class="sec-title">Ruta planificada <span class="plan-dot"></span></h2>${summary}
+       <div class="btn-row plan-btns">
+         <button class="btn primary plan-play" type="button" data-plan="play">Reproducir</button>
+         <button class="btn" type="button" data-plan="frame">Encuadrar</button>
+         <a class="btn" href="index.html#plan">Editar en el mapa</a>
+         <button class="btn" type="button" data-plan="close">Cerrar</button>
+       </div>`
+    : `<h2 class="sec-title">Ruta planificada</h2>${summary}
+       <div class="btn-row plan-btns"><button class="btn primary plan-play" type="button" data-plan="open">Mostrar en 3D</button></div>`;
+}
+
+function enterPlanMode() {
+  if (!plan) return;
+  if (state.playing) togglePlay(); // pausa la ruta de Perseverance
+  planViz.setVisible(true);
+  planViz.refresh();
+  $('profile-wrap').hidden = true;
+  $('plan-profile-wrap').hidden = false;
+  document.querySelector('.dock').classList.add('plan-mode');
+  let last = null;
+  planDock = mountPlanDock({
+    wrap: $('plan-profile-wrap'),
+    route: plan,
+    colorAt: (p) => COLORS[tiltClass(p.slope)],
+    playBtn: $('play'),
+    labelEl: $('slider-label'),
+    subEl: $('readout-sub'),
+    onSample(s) {
+      const v = worldPoint(s.lon, s.lat, ROUTE_LIFT_M * state.exag);
+      planViz.vehicle.position.copy(v);
+      planViz.done.instanceCount = s.seg;
+      // La cámara acompaña al vehículo mientras se reproduce (si "Seguir" está activo)
+      if (state.follow && !state.astro && last && planDock?.player.playing) {
+        const d = v.clone().sub(last);
+        camera.position.add(d);
+        controls.target.add(d);
+      }
+      last = v.clone();
+    },
+  });
+  $('to-other-view').href = 'index.html#plan';
+  history.replaceState(null, '', '#plan');
+  renderPlanPanel();
+  frameRoute();
+}
+
+function exitPlanMode() {
+  planDock?.destroy();
+  planDock = null;
+  planViz?.setVisible(false);
+  $('profile-wrap').hidden = false;
+  $('plan-profile-wrap').hidden = true;
+  document.querySelector('.dock').classList.remove('plan-mode');
+  setPlayButton($('play'), false);
+  renderPlanPanel();
+  select(state.idx, { moveCamera: false });
+}
+
+$('plan-sec').addEventListener('click', (e) => {
+  const act = e.target.closest('[data-plan]')?.dataset.plan;
+  if (act === 'open') enterPlanMode();
+  else if (act === 'close') exitPlanMode();
+  else if (act === 'frame') frameRoute();
+  else if (act === 'play') planDock?.player.toggle();
+});
 
 const profile = buildProfile($('profile-wrap'), pts, { onPick: (i) => select(i), colorAt: tiltColor });
 
@@ -643,6 +806,7 @@ $('top').addEventListener('click', topView);
 $('layer').addEventListener('change', (e) => setLayer(e.target.value));
 renderLegend(state.layer);
 document.addEventListener('keydown', (e) => {
+  if (document.body.classList.contains('touring')) return; // el tour tiene sus propias teclas
   if (e.target.closest('input, select, textarea')) return;
   if (e.key === 'ArrowRight') select(Math.min(state.idx + 1, pts.length - 1));
   if (e.key === 'ArrowLeft') select(Math.max(state.idx - 1, 0));
@@ -652,12 +816,34 @@ document.addEventListener('keydown', (e) => {
 setExaggeration(state.exag);
 select(indexFromHash(pts.length - 1), { moveCamera: false });
 overview();
+renderPlanPanel();
+if (wantsPlan && plan) enterPlanMode();
 $('loading').hidden = true;
 
-renderer.setAnimationLoop(() => {
+const frameHooks = new Set();
+renderer.setAnimationLoop((t) => {
+  frameHooks.forEach((fn) => fn(t));
   controls.update();
   renderer.render(scene, camera);
 });
+
+// ---------- Tour guiado (se carga solo al pedirlo) ----------
+const tourApi = {
+  THREE, camera, controls, pts, state, stats: elev.meta.summary,
+  stage: document.querySelector('.stage'),
+  center: () => toLocal(lonC, latC, (hMin + hMax) / 2).multiply(new THREE.Vector3(1, state.exag, 1)),
+  worldPoint, astroPose, setLayer, setExaggeration, setAstroMode, setViewButton, select, overview,
+  radiation: () => radiationGrid(),
+  onFrame: (fn) => { frameHooks.add(fn); return () => frameHooks.delete(fn); },
+};
+async function startTour() {
+  const { runTour } = await import('./tour.js');
+  runTour(tourApi);
+}
+$('tour-btn').addEventListener('click', startTour);
+if (wantsTour) {
+  import('./tour.js').then(({ offerTour }) => offerTour(tourApi));
+}
 
 // ---------- Textura en segundo plano ----------
 let dirty = false;

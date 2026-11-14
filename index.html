@@ -29,13 +29,24 @@
       <a href="index.html" aria-current="page">Mapa</a>
       <a id="to-other-view" href="3d.html">Terreno 3D</a>
     </nav>
+    <a class="btn primary tour-launch" href="3d.html#tour">
+      <svg width="12" height="12" viewBox="0 0 14 14" aria-hidden="true"><path d="M3 1.8v10.4L12 7z" fill="currentColor"/></svg>
+      Tour guiado
+    </a>
     <div class="stats" id="stats"></div>
   </header>
 
   <main class="stage">
     <div id="map" aria-label="Mapa de Marte"></div>
 
-    <aside class="float float-left" aria-label="Capas y ruta">
+    <aside class="float float-left" aria-label="Capas y planificador">
+      <div class="panel-tabs">
+        <div class="seg" role="tablist" aria-label="Panel">
+          <button type="button" data-tab="layers" aria-pressed="true">Capas</button>
+          <button type="button" data-tab="plan" aria-pressed="false">Planificar ruta</button>
+        </div>
+      </div>
+      <div id="panel-layers">
       <section class="sec">
         <h2 class="sec-title">Mapa base</h2>
         <label class="layer">
@@ -104,6 +115,47 @@
           </ul>
         </details>
       </section>
+      </div>
+
+      <div id="panel-plan" hidden>
+        <section class="sec">
+          <h2 class="sec-title">Trayecto</h2>
+          <div id="plan-points"></div>
+          <div class="btn-row" style="margin-top:8px">
+            <button id="plan-from-rover" class="btn" type="button">Origen en la parada actual</button>
+            <button id="plan-swap" class="btn icon" type="button" aria-label="Intercambiar origen y destino" title="Intercambiar A y B">⇅</button>
+          </div>
+          <p id="plan-status" class="plan-status" role="status"></p>
+        </section>
+
+        <section class="sec">
+          <h2 class="sec-title">Vehículo</h2>
+          <div id="plan-vehicles" role="radiogroup" aria-label="Vehículo"></div>
+          <details class="method" style="margin-top:10px">
+            <summary>Especificaciones</summary>
+            <div id="plan-specs" class="specs"></div>
+            <p>Valores de partida aproximados; cámbialos y la ruta se recalcula.</p>
+          </details>
+        </section>
+
+        <section class="sec">
+          <h2 class="sec-title">Rutas</h2>
+          <div id="plan-results"></div>
+        </section>
+
+        <section class="sec">
+          <details class="method">
+            <summary>Cómo calcula</summary>
+            <ul>
+              <li>Algoritmo A* sobre el DTM CTX: celdas de 20 m, 8 direcciones.</li>
+              <li>Prohibidas las celdas con pendiente (a escala de ~60 m) por encima del máximo del vehículo.</li>
+              <li>Velocidad según la pendiente del tramo (a pie: función de Tobler) y la rugosidad del terreno.</li>
+              <li>Más rápida: minimiza el tiempo. Más segura: penaliza pendiente y rugosidad. Menos energía: rodadura y desnivel.</li>
+              <li>No ve rocas ni escalones de menos de ~20 m: para una salida real haría falta el DTM HiRISE de 1 m.</li>
+            </ul>
+          </details>
+        </section>
+      </div>
     </aside>
 
     <aside class="float float-right" aria-label="Parada seleccionada">
@@ -118,6 +170,7 @@
   <footer class="dock">
     <button id="play" class="btn icon play" type="button"></button>
     <div class="profile-wrap" id="profile-wrap"></div>
+    <div class="profile-wrap" id="plan-profile-wrap" hidden></div>
     <div class="readout" aria-live="polite">
       <div class="r1" id="slider-label"></div>
       <div class="r2" id="readout-sub"></div>

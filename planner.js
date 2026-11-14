@@ -18,9 +18,9 @@ export function setupPlanner({ L, map, dem, onRouteChange, onPlay, onCreated, on
   };
 
   // ---------- Workers ----------
-  // Un worker por objetivo (rápida, segura, energía) para calcular las alternativas en paralelo; cada uno
-  // importa el A* común (src/planner/a-star.js). Con pocos núcleos se reparten entre menos workers.
-  const POOL = Math.max(1, Math.min(OBJECTIVES.length, (navigator.hardwareConcurrency || 2) - 1));
+  // El A* con penalización de giro conserva hasta 8 estados por celda. Un solo worker evita
+  // multiplicar esa memoria por cada alternativa; el worker calcula los objetivos en secuencia.
+  const POOL = 1;
   const workers = [];
   let readyCount = 0;
   const pending = { id: 0, parts: 0, routes: [], t0: 0 };

@@ -60,6 +60,7 @@ El cargador también conserva compatibilidad con el contrato matricial anterior 
   - `edgeCost(i, j, metros)` permite costes con sentido (subir no cuesta lo mismo que bajar).
   - El planificador de la app la usa sobre el DTM completo de 20 m (unas 460 000 celdas), con el modelo de cada vehículo (pendiente máxima, Tobler, rugosidad, energía).
 - **`cornerCutting`** (por defecto `false`, como en este contrato). El planificador de la app lo activa: en el DTM las celdas bloqueadas salen de umbralizar una pendiente suavizada, no son obstáculos puntuales.
+- **`turnPenalty`** (opcional): función `(baseCost, bend) => extraCost`; activa una búsqueda que conserva la dirección de llegada (8 estados por celda). `bend` es `1 - cos(ángulo)` entre tramos: una curva amplia cuesta poco y un giro brusco cuesta más. La penalización no relaja las celdas bloqueadas ni el coste base; requiere más memoria, por lo que la app calcula sus objetivos en secuencia dentro de un worker.
 - **Rendimiento:** arrays tipados e índices enteros, memoria reutilizada entre búsquedas (sin reinicializar) y el resultado con `indices` (Int32Array) y `expanded`.
 
 Con matriz y lista de celdas devuelve el mismo coste óptimo que la versión original. Se comprobó en 240 casos: rejillas aleatorias de los dos formatos, los dos objetivos y los datos de `mars_grid.py`.

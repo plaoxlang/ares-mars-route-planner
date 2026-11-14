@@ -7,6 +7,7 @@ import { findPath } from './src/planner/a-star.js';
 
 const G_MARS = 3.721; // m/s²
 const SAFE_SLOPE = 8; // por encima de esta pendiente (°) la ruta "segura" penaliza fuerte
+const TURN_PENALTY = 0.35; // coste relativo al tramo por cambio de rumbo (0 = sin preferencia)
 let T = null; // terreno: { h, w, hgt, pxX, pxY, slope, rough }
 
 self.onmessage = (e) => {
@@ -301,6 +302,9 @@ function plan(start, goal, v, objective) {
       goal: { row: goal[1], col: goal[0] },
       edgeCost,
       heuristic,
+      // 1 - cos(ángulo) apenas penaliza curvas amplias, pero sí evita cambios bruscos y zigzags.
+      // La penalización usa las mismas unidades que el objetivo (s, o Wh) y nunca altera la seguridad.
+      turnPenalty: (baseCost, bend) => baseCost * TURN_PENALTY * bend,
       cornerCutting: true, // celdas bloqueadas = umbral de una pendiente suavizada, no obstáculos puntuales
     });
   } finally {

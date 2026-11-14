@@ -103,7 +103,10 @@ const DC = [-1, 0, 1, -1, 1, -1, 0, 1];
  * blocked: Uint8Array (1 = no transitable). dist(i, j, dr, dc) → metros (o unidades) del tramo.
  * edgeCost(i, j, d) → coste (Infinity = prohibido). heuristic(i) → cota inferior del coste a la meta.
  */
-export function searchIndices({ rows, cols, blocked, start, goal, dist, edgeCost, heuristic, cornerCutting = false }) {
+export function searchIndices({ rows, cols, blocked, start, goal, dist, edgeCost, heuristic, cornerCutting = false, turnPenalty = null }) {
+  if (turnPenalty) {
+    return searchWithHeading({ rows, cols, blocked, start, goal, dist, edgeCost, heuristic, cornerCutting, turnPenalty });
+  }
   const n = rows * cols;
   const buf = buffersFor(n);
   buf.next();
@@ -151,6 +154,90 @@ export function searchIndices({ rows, cols, blocked, start, goal, dist, edgeCost
   const indices = new Int32Array(len);
   for (let c = goal, k = len - 1; c !== -1; c = came[c], k--) indices[k] = c;
   return { indices, cost: g[goal], expanded };
+}
+
+// When turn cost matters, a cell alone is not a complete search state: arriving from the north
+// and arriving from the west have different future costs. Track the incoming direction (8 states
+// per cell) so A* can compare those paths correctly instead of greedily smoothing its output.
+function searchWithHeading({ rows, cols, blocked, start, goal, dist, edgeCost, heuristic, cornerCutting, turnPenalty }) {
+  const n = rows * cols;
+  const stateCount = n * 8;
+  const buf = buffersFor(stateCount);
+  buf.next();
+  const { g, came, stamp, closedStamp, heap } = buf;
+  const gen = buf.gen;
+  const startCell = start;
+  const goalCell = goal;
+  const stateCell = (state) => (state / 8) | 0;
+  let expanded = 0;
+  let found = -1;
+
+  // Seed the first step in every possible direction; the initial heading is unconstrained.
+  const sr = (startCell / cols) | 0;
+  const sc = startCell - sr * cols;
+  for (let k = 0; k < 8; k++) {
+    const nr = sr + DR[k];
+    const nc = sc + DC[k];
+    if (nr < 0 || nc < 0 || nr >= rows || nc >= cols) continue;
+    const nb = nr * cols + nc;
+    if (blocked[nb]) continue;
+    if (!cornerCutting && DR[k] !== 0 && DC[k] !== 0 && (blocked[sr * cols + nc] || blocked[nr * cols + sc])) continue;
+    const state = nb * 8 + k;
+    const cost = edgeCost(startCell, nb, dist(startCell, nb, DR[k], DC[k]));
+    if (!(cost < Infinity)) continue;
+    g[state] = cost;
+    came[state] = -1;
+    stamp[state] = gen;
+    heap.push(state, cost + heuristic(nb));
+  }
+
+  while (heap.size) {
+    const curState = heap.pop();
+    if (closedStamp[curState] === gen) continue;
+    const cur = stateCell(curState);
+    if (cur === goalCell) { found = curState; break; }
+    closedStamp[curState] = gen;
+    expanded++;
+    const cr = (cur / cols) | 0;
+    const cc = cur - cr * cols;
+    const prevDir = curState & 7;
+    const gc = g[curState];
+    for (let k = 0; k < 8; k++) {
+      const dr = DR[k];
+      const dc = DC[k];
+      const nr = cr + dr;
+      const nc = cc + dc;
+      if (nr < 0 || nc < 0 || nr >= rows || nc >= cols) continue;
+      const nb = nr * cols + nc;
+      if (blocked[nb]) continue;
+      if (!cornerCutting && dr !== 0 && dc !== 0 && (blocked[cr * cols + nc] || blocked[nr * cols + cc])) continue;
+      const base = edgeCost(cur, nb, dist(cur, nb, dr, dc));
+      if (!(base < Infinity)) continue;
+      const dot = DR[prevDir] * dr + DC[prevDir] * dc;
+      const mag = Math.hypot(DR[prevDir], DC[prevDir]) * Math.hypot(dr, dc);
+      const bend = 1 - dot / mag;
+      const tentative = gc + base + turnPenalty(base, bend);
+      const nextState = nb * 8 + k;
+      if (stamp[nextState] !== gen || tentative < g[nextState]) {
+        g[nextState] = tentative;
+        came[nextState] = curState;
+        stamp[nextState] = gen;
+        heap.push(nextState, tentative + heuristic(nb));
+      }
+    }
+  }
+  if (found < 0) return { indices: null, cost: Infinity, expanded };
+
+  let len = 1;
+  for (let s = found; came[s] !== -1; s = came[s]) len++;
+  const indices = new Int32Array(len + 1);
+  indices[0] = startCell;
+  let state = found;
+  for (let k = len; k > 0; k--) {
+    indices[k] = stateCell(state);
+    state = came[state];
+  }
+  return { indices, cost: g[found], expanded };
 }
 
 // ---------- Rejillas del contrato del equipo → forma interna ----------
@@ -253,7 +340,7 @@ const sameCell = (a, b) => a.row === b.row && a.col === b.col;
  *  no son obstáculos puntuales, y ahí el planificador lo permite.
  */
 export function findPath({
-  grid: sourceGrid, start, goal, objective, roverSpeedMps, unknownRiskPenalty = 0, edgeCost, heuristic, cornerCutting = false,
+  grid: sourceGrid, start, goal, objective, roverSpeedMps, unknownRiskPenalty = 0, edgeCost, heuristic, cornerCutting = false, turnPenalty = null,
 }) {
   // --- Rejilla densa con costes propios (worker del planificador) ---
   if (typeof edgeCost === 'function') {
@@ -268,7 +355,7 @@ export function findPath({
     const s = start.row * cols + start.col;
     const t = goal.row * cols + goal.col;
     if (s === t) return { path: [start], objectiveCost: 0, indices: Int32Array.of(s), expanded: 0 };
-    const res = searchIndices({ rows, cols, blocked, start: s, goal: t, dist, edgeCost, heuristic: heuristic ?? (() => 0), cornerCutting });
+    const res = searchIndices({ rows, cols, blocked, start: s, goal: t, dist, edgeCost, heuristic: heuristic ?? (() => 0), cornerCutting, turnPenalty });
     if (!res.indices) return null;
     return { path: toPoints(res.indices, cols), objectiveCost: res.cost, indices: res.indices, expanded: res.expanded };
   }

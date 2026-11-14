@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Martian Map · Ruta Curiosity</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="dot"></span>
+      <strong>Martian Map</strong>
+      <span class="muted">Prototipo · Curiosity en Gale / Mount Sharp</span>
+    </div>
+    <div class="topbar-right">
+      <div class="stats" id="stats" aria-live="polite"></div>
+      <a id="to-other-view" class="link-btn" href="3d.html">Ver en 3D</a>
+    </div>
+  </header>
+
+  <main class="layout">
+    <section class="map-col">
+      <div id="map" aria-label="Mapa de Marte"></div>
+
+      <div class="timeline">
+        <button id="play" class="btn" type="button" aria-label="Reproducir ruta">▶</button>
+        <input id="slider" type="range" min="0" max="0" value="0" aria-label="Parada de la ruta">
+        <span id="slider-label" class="mono"></span>
+      </div>
+
+      <div class="profile">
+        <div class="profile-head">
+          <span>Perfil de elevación (m, respecto al areoide)</span>
+          <span class="legend">
+            <i class="sw ok"></i>&lt; 8°
+            <i class="sw warn"></i>8–15°
+            <i class="sw bad"></i>&gt; 15° inclinación del rover
+          </span>
+        </div>
+        <svg id="profile" role="img" aria-label="Perfil de elevación de la ruta"></svg>
+      </div>
+    </section>
+
+    <aside class="panel">
+      <section class="card" id="stop-card">
+        <h2>Parada seleccionada</h2>
+        <dl id="stop-details" class="details"></dl>
+        <div id="stop-alerts"></div>
+      </section>
+
+      <section class="card">
+        <h2>Clima y avisos</h2>
+        <div class="controls">
+          <label>Colorear paradas por
+            <select id="route-color" class="select">
+              <option value="tilt">Inclinación del rover</option>
+              <option value="temp">Temperatura mínima del aire</option>
+            </select>
+          </label>
+          <div id="route-legend" class="legend3d small muted"></div>
+          <div class="thresholds">
+            <label>Aviso si aire mín. &lt; <input id="th-air" class="num" type="number" step="5"> °C</label>
+            <label>Aviso si suelo mín. &lt; <input id="th-ground" class="num" type="number" step="5"> °C</label>
+          </div>
+          <p id="alert-summary" class="small" style="margin:0"></p>
+          <p class="muted small" style="margin:0">Temperaturas medidas por REMS (Curiosity) el sol en que pasó por cada parada. Umbrales de ejemplo: ajustadlos a los límites reales del traje. Capa espacial: «Frío nocturno relativo» en el selector de capas del mapa.</p>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Imágenes del rover ese sol</h2>
+        <p id="photos-status" class="muted small"></p>
+        <div id="photos" class="photos"></div>
+      </section>
+
+      <section class="card small muted">
+        <h2>Fuentes</h2>
+        <ul class="sources">
+          <li>Teselas: JPL Mars Trek (MOLA, Viking, MRO CTX y HiRISE de Gale, DEM HiRISE 1 m)</li>
+          <li>Ruta y paradas: visor MMGIS de NASA (MSL_traverse / MSL_waypoints)</li>
+          <li>Fotos: API pública de raw images de Curiosity</li>
+          <li>Clima: REMS (CAB/NASA), feed de divulgación. Frío nocturno: THEMIS IR noche (Mars Trek)</li>
+        </ul>
+      </section>
+    </aside>
+  </main>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+          integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <script src="app.js" type="module"></script>
+</body>
+</html>

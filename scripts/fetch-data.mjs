@@ -1,30 +1,26 @@
-// Descarga los datos de ruta de Curiosity (MSL) desde el visor MMGIS de NASA.
-// Estos JSON no admiten CORS, por eso se guardan en local en data/.
+// Descarga los puntos de navegación publicados por NASA para Perseverance en Jezero.
+// Se guardan localmente porque el endpoint MMGIS no permite solicitudes CORS desde el navegador.
 // Uso: node scripts/fetch-data.mjs
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const outDir = join(root, 'data');
-
-const SOURCES = {
-  'msl_waypoints.json': 'https://mars.nasa.gov/mmgis-maps/MSL/Layers/json/MSL_waypoints.json',
-  'msl_traverse.json': 'https://mars.nasa.gov/mmgis-maps/MSL/Layers/json/MSL_traverse.json',
-};
-
-await mkdir(outDir, { recursive: true });
-
-for (const [file, url] of Object.entries(SOURCES)) {
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`${url} -> HTTP ${res.status}`);
-  const json = await res.json();
-  if (json.type !== 'FeatureCollection') throw new Error(`${url} no es un FeatureCollection`);
-  await writeFile(join(outDir, file), JSON.stringify(json));
-  console.log(`${file}: ${json.features.length} features`);
+const outDir = join(root, 'data', 'jezero');
+const url = 'https://mars.nasa.gov/mmgis-maps/M20/Layers/json/M20_waypoints.json';
+const response = await fetch(url);
+if (!response.ok) throw new Error(`${url} -> HTTP ${response.status}`);
+const waypoints = await response.json();
+if (waypoints.type !== 'FeatureCollection' || !Array.isArray(waypoints.features)) {
+  throw new Error('NASA no devolvió un GeoJSON FeatureCollection de puntos');
 }
-
-await writeFile(
-  join(outDir, 'sources.json'),
-  JSON.stringify({ downloadedAt: new Date().toISOString(), sources: SOURCES }, null, 2),
-);
+await mkdir(outDir, { recursive: true });
+await writeFile(join(outDir, 'waypoints.json'), JSON.stringify(waypoints));
+await writeFile(join(outDir, 'sources.json'), JSON.stringify({
+  downloadedAt: new Date().toISOString(),
+  mission: 'Mars 2020 Perseverance',
+  site: 'Jezero crater',
+  sources: { waypoints: url },
+  note: 'Waypoints are rover localizations; connecting them produces a reference polyline, not the exact detailed traverse.',
+}, null, 2));
+console.log(`Jezero waypoints: ${waypoints.features.length} points`);

@@ -1,0 +1,9 @@
+{
+  "downloadedAt": "2026-11-14T10:10:17.888Z",
+  "mission": "Mars 2020 Perseverance",
+  "site": "Jezero crater",
+  "sources": {
+    "waypoints": "https://mars.nasa.gov/mmgis-maps/M20/Layers/json/M20_waypoints.json"
+  },
+  "note": "Waypoints are rover localizations; connecting them produces a reference polyline, not the exact detailed traverse."
+}

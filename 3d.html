@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Martian Map 3D · Gale</title>
+  <link rel="stylesheet" href="styles.css">
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="dot"></span>
+      <strong>Martian Map 3D</strong>
+      <span class="muted">Prototipo · relieve de Gale / Mount Sharp</span>
+    </div>
+    <div class="topbar-right">
+      <div class="stats" id="stats" aria-live="polite"></div>
+      <a id="to-other-view" class="link-btn" href="index.html">Ver en 2D</a>
+    </div>
+  </header>
+
+  <main class="layout">
+    <section class="map-col">
+      <div id="scene" aria-label="Vista 3D del terreno">
+        <div id="loading" class="loading" role="status">
+          <strong id="loading-title">Cargando relieve…</strong>
+          <div class="bar"><i id="loading-bar"></i></div>
+          <span id="loading-detail" class="muted small"></span>
+        </div>
+        <span id="tex-status" class="tex-status" aria-live="polite"></span>
+      </div>
+
+      <div class="timeline">
+        <button id="play" class="btn" type="button" aria-label="Reproducir ruta">▶</button>
+        <input id="slider" type="range" min="0" max="0" value="0" aria-label="Parada de la ruta">
+        <span id="slider-label" class="mono"></span>
+      </div>
+    </section>
+
+    <aside class="panel">
+      <section class="card">
+        <h2>Vista</h2>
+        <div class="controls">
+          <label>Capa del terreno
+            <select id="layer" class="select">
+              <option value="sat">Satélite (HiRISE + CTX)</option>
+              <option value="color">Satélite en color (aprox.)</option>
+              <option value="elev">Altura en color</option>
+              <option value="slope">Pendiente</option>
+              <option value="cold">Frío nocturno relativo (THEMIS)</option>
+              <option value="rad">Radiación estimada</option>
+            </select>
+          </label>
+          <div id="legend" class="legend3d small muted"></div>
+          <label>Exageración vertical: <span id="exag-label" class="mono">2×</span>
+            <input id="exag" type="range" min="1" max="6" step="0.5" value="2">
+          </label>
+          <label class="row"><input id="follow" type="checkbox" checked> Seguir al rover</label>
+          <div class="btn-row">
+            <button id="astro" class="btn wide" type="button">Vista astronauta</button>
+            <button id="overview" class="btn wide" type="button">Vista general</button>
+            <button id="top" class="btn wide" type="button">Vista cenital (2D)</button>
+          </div>
+          <p class="muted small" style="margin:0">Arrastra para girar, rueda para zoom, botón derecho para desplazar. Flechas ← → para moverte entre paradas.</p>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Parada seleccionada</h2>
+        <dl id="stop-details" class="details"></dl>
+        <div id="stop-alerts"></div>
+      </section>
+
+      <section class="card">
+        <h2>Clima y avisos</h2>
+        <div class="controls">
+          <label>Colorear ruta por
+            <select id="route-color" class="select">
+              <option value="tilt">Inclinación del rover</option>
+              <option value="temp">Temperatura mínima del aire</option>
+            </select>
+          </label>
+          <div id="route-legend" class="legend3d small muted"></div>
+          <div class="thresholds">
+            <label>Aviso si aire mín. &lt; <input id="th-air" class="num" type="number" step="5"> °C</label>
+            <label>Aviso si suelo mín. &lt; <input id="th-ground" class="num" type="number" step="5"> °C</label>
+          </div>
+          <p id="alert-summary" class="small" style="margin:0"></p>
+          <p class="muted small" style="margin:0">Temperaturas medidas por REMS (Curiosity) el sol en que pasó por cada parada. Umbrales de ejemplo: ajustadlos a los límites reales del traje.</p>
+        </div>
+      </section>
+
+      <section class="card small muted">
+        <h2>Cómo está hecho</h2>
+        <p id="calib" style="margin:0 0 8px"></p>
+        <ul class="sources">
+          <li>Relieve: DEM HiRISE de Gale (Mars Trek), en 8 bits, calibrado con las alturas reales de las paradas y suavizado.</li>
+          <li>Textura: MRO CTX y encima MRO HiRISE (Mars Trek).</li>
+          <li>Ruta: paradas de Curiosity (NASA MMGIS) apoyadas sobre el terreno.</li>
+          <li>Clima: REMS (CAB/NASA). Frío nocturno: THEMIS IR noche (Mars Trek).</li>
+          <li>Radiación: modelo propio a partir de la media medida por RAD (Curiosity), el cielo visible y la altitud. Es una estimación.</li>
+        </ul>
+      </section>
+    </aside>
+  </main>
+
+  <script type="module" src="scene3d.js"></script>
+</body>
+</html>

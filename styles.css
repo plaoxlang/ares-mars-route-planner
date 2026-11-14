@@ -1134,7 +1134,7 @@ body.presenting .nav-hint, body.presenting .chip, body.presenting .intro { displ
   position: absolute; left: 396px; bottom: 131px; width: min(470px, calc(100% - 412px)); pointer-events: auto;
   padding: 16px 20px 12px; background: rgba(0, 0, 0, 0.9); border: 1px solid var(--line-2); border-left: 3px solid var(--accent);
 }
-.pres-card.in { animation: pres-in 0.45s ease both; }
+.pres-card.in { animation: pres-in 1.3s ease both; }
 @keyframes pres-in { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
 .pres-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
 .pres-kicker { font: 600 11px var(--cond); letter-spacing: 0.22em; text-transform: uppercase; color: var(--accent); }
@@ -1208,3 +1208,590 @@ body.presenting .nav-hint, body.presenting .chip, body.presenting .intro { displ
 /* En el mapa 2D la tarjeta va arriba a la derecha (abajo a la izquierda queda la ruta) */
 .pres-2d .pres-card { top: 72px; right: 16px; bottom: auto; left: auto; width: 420px; }
 @media (max-width: 900px) { .pres-2d .pres-card { top: auto; bottom: 110px; left: 10px; right: 10px; width: auto; } }
+
+/* ---------- Entrada al volante (3d.html#drive) ---------- */
+.cine-cover {
+  position: absolute; inset: 0; z-index: 820; display: grid; place-content: center; justify-items: center; gap: 8px;
+  background: #000; text-align: center; transition: opacity 0.9s ease;
+}
+.cine-cover.out { opacity: 0; pointer-events: none; }
+.cine-kicker { font: 600 12px var(--cond); letter-spacing: 0.3em; text-transform: uppercase; color: var(--accent); }
+.cine-cover h2 { margin: 0; font: 600 46px var(--cond); letter-spacing: 0.08em; text-transform: uppercase; color: var(--text); }
+.cine-cover p { margin: 0; color: var(--text-2); font-size: 13px; }
+body.driving .cine-cover h2 { animation: cine-in 1.2s ease both; }
+@keyframes cine-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+
+/* ---------- Al volante: cuenta atrás y fundido (mapa 2D) ---------- */
+.drive-toast {
+  position: absolute; left: calc(50% + 190px); bottom: 131px; transform: translateX(-50%); z-index: 640;
+  display: flex; align-items: center; gap: 12px; padding: 10px 12px 10px 10px;
+  background: rgba(0, 0, 0, 0.92); border: 1px solid var(--line-2); border-left: 3px solid var(--accent);
+  animation: dt-in 1s ease both; white-space: nowrap;
+}
+.drive-toast.out { opacity: 0; transform: translate(-50%, 8px); transition: opacity 0.5s, transform 0.5s; }
+@keyframes dt-in { from { opacity: 0; transform: translate(-50%, 10px); } to { opacity: 1; transform: translate(-50%, 0); } }
+.dt-ring { width: 34px; height: 34px; transform: rotate(-90deg); flex: none; }
+.dt-ring circle { fill: none; stroke: var(--line-2); stroke-width: 3; }
+.dt-ring .dt-arc { stroke: var(--accent); stroke-dasharray: 107; stroke-dashoffset: 0; animation: dt-count 10s linear forwards; }
+@keyframes dt-count { to { stroke-dashoffset: 107; } }
+.dt-text { display: flex; flex-direction: column; gap: 2px; }
+.dt-text b { font: 600 12px var(--cond); letter-spacing: 0.16em; text-transform: uppercase; color: var(--text); }
+.dt-text span { font-size: 12.5px; color: var(--text-2); }
+.dt-text i { font-style: normal; color: var(--accent); font-weight: 600; }
+.drive-toast .btn { height: 30px; }
+.drive-btn svg { margin-right: 6px; }
+.drive-veil {
+  position: fixed; inset: 0; z-index: 990; display: grid; place-content: center; justify-items: center; gap: 8px;
+  background: #000; opacity: 0; transition: opacity 0.7s ease; pointer-events: none; text-align: center;
+}
+.drive-veil.on { opacity: 1; }
+.drive-veil h2 { margin: 0; font: 600 46px var(--cond); letter-spacing: 0.08em; text-transform: uppercase; color: var(--text); }
+@media (max-width: 900px) {
+  .drive-toast { left: 50%; bottom: 110px; flex-wrap: wrap; white-space: normal; width: calc(100% - 20px); }
+}
+/* Acciones de la ruta: "Al volante" a todo el ancho, el resto debajo */
+.plan-side .plan-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.plan-side .plan-actions .drive-btn { grid-column: 1 / -1; height: 40px; font-size: 12px; }
+.plan-side .plan-actions .btn { justify-content: center; white-space: nowrap; }
+
+/* Entrada directa al volante: ni pantalla de carga ni rótulos (el vuelo es la transición) */
+.drive-entry .loading, .drive-entry .chip, .drive-entry .nav-hint, .drive-entry .layerbar,
+.drive-entry .navctl, .drive-entry .zone-label, .drive-entry .intro { visibility: hidden !important; }
+
+/* ==========================================================================
+   Animaciones de la interfaz: paneles, menús, rutas, capas y vistas 3D.
+   Todo se desactiva con "reducir movimiento" del sistema (al final).
+   ========================================================================== */
+:root { --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1); --ease-spring: cubic-bezier(0.34, 1.4, 0.5, 1); }
+@keyframes ui-pop { from { opacity: 0; transform: translateY(12px) scale(0.98); } to { opacity: 1; transform: none; } }
+@keyframes ui-pop-out { to { opacity: 0; transform: translateY(10px) scale(0.98); } }
+@keyframes ui-rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+@keyframes ui-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes ui-from-left { from { opacity: 0; transform: translateX(-28px); } to { opacity: 1; transform: none; } }
+@keyframes ui-from-right { from { opacity: 0; transform: translateX(28px); } to { opacity: 1; transform: none; } }
+@keyframes ui-from-top { from { opacity: 0; transform: translateY(-14px); } to { opacity: 1; transform: none; } }
+@keyframes ui-wipe { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
+@keyframes ui-expand { from { opacity: 0; transform: translateY(-6px); clip-path: inset(0 0 100% 0); } to { opacity: 1; transform: none; clip-path: inset(0 0 0 0); } }
+@keyframes ui-shimmer { from { background-position: -240px 0; } to { background-position: 240px 0; } }
+@keyframes ui-press { 0% { transform: scale(1); } 40% { transform: scale(0.94); } 100% { transform: scale(1); } }
+@keyframes ui-glow { 0% { box-shadow: 0 0 0 0 rgba(78, 161, 255, 0.55); } 100% { box-shadow: 0 0 0 14px rgba(78, 161, 255, 0); } }
+@keyframes pin-drop { 0% { opacity: 0; transform: translateY(-34px) rotate(-45deg); } 60% { opacity: 1; transform: translateY(3px) rotate(-45deg); } 80% { transform: translateY(-3px) rotate(-45deg); } 100% { transform: rotate(-45deg); } }
+
+/* Entrada de la página: cabecera, ficha y barra inferior */
+.topbar > * { animation: ui-from-top 0.7s var(--ease-out) both; }
+.topbar > :nth-child(2) { animation-delay: 0.07s; }
+.topbar > :nth-child(3) { animation-delay: 0.14s; }
+.topbar > :nth-child(4) { animation-delay: 0.21s; }
+body[data-ui="mix"] .float-right { animation: ui-from-left 1.68s var(--ease-out) both; }
+.dock { animation: ui-rise 0.77s var(--ease-out) 0.14s both; }
+.viewbar, .navctl { animation: ui-from-right 1.4s var(--ease-out) 0.42s both; }
+.layerbar { animation: ui-pop 1.4s var(--ease-out) 0.56s both; }
+.stat { animation: ui-rise 0.63s var(--ease-out) both; animation-delay: calc(var(--i, 0) * 84ms); }
+.profile-wrap svg { animation: ui-wipe 1.26s var(--ease-out) both; }
+
+/* Menús de la barra inferior */
+.dock-pop:not([hidden]) { animation: ui-pop 0.78s var(--ease-out) both; transform-origin: bottom left; }
+.dock-pop.closing { animation: ui-pop-out 0.5s ease both; pointer-events: none; }
+.dock-pop-side:not([hidden]) { animation-name: ui-from-left; }
+.dock-tool { transition: background 0.28s, color 0.28s, box-shadow 0.28s; }
+.dock-tool[aria-expanded="true"] { animation: ui-press 0.35s ease; }
+
+/* Botones: respuesta al pulsar */
+.btn, .pres-btn, .pres-mode, .navctl button, .lb-toggle { transition: transform 0.17s ease, background 0.28s, border-color 0.28s, color 0.28s; }
+.btn:active, .pres-btn:active, .pres-mode:active, .navctl button:active { transform: scale(0.96); }
+.viewbar .seg button[aria-pressed="true"] { animation: ui-press 0.35s ease; }
+
+/* Barra de capas: se pliega con animación; la capa elegida "salta" */
+.lb-fold { display: grid; grid-template-rows: 1fr; transition: grid-template-rows 0.98s var(--ease-out), opacity 0.7s; }
+.lb-fold > div { min-height: 0; overflow: hidden; }
+.layerbar.collapsed .lb-fold { grid-template-rows: 0fr; opacity: 0; }
+.layerbar.collapsed .lb-body, .layerbar.collapsed .lb-legends { display: flex; }
+.layerbar.collapsed .lb-legends { display: block; }
+.lb-cards .layer:has(input:checked) .thumb { animation: ui-press 0.42s var(--ease-spring); }
+.lb-cards .thumb { transition: opacity 0.28s, border-color 0.28s, box-shadow 0.35s, transform 0.28s; }
+.lb-cards .layer:hover .thumb { transform: translateY(-2px); }
+.lb-legends > :not([hidden]) { animation: ui-rise 0.98s var(--ease-out) both; }
+.lb-active { transition: color 0.28s; }
+
+/* Planificador: estado, cálculo, tarjetas y pines */
+.plan-status.flash { animation: ui-rise 0.49s var(--ease-out) both; }
+#plan-routes-sec:not([hidden]) { animation: ui-fade 0.42s ease both; }
+#plan-results.pending { opacity: 1; }
+#plan-results.pending .route-card:not(.skeleton) { opacity: 0.45; transition: opacity 0.28s; }
+.route-card.skeleton { height: 64px; padding: 14px; pointer-events: none; animation: ui-rise 0.49s var(--ease-out) both; animation-delay: calc(var(--i, 0) * 98ms); }
+.route-card.skeleton i {
+  display: block; height: 10px; margin-bottom: 10px; background: linear-gradient(90deg, var(--raise) 0, var(--line-2) 50%, var(--raise) 100%);
+  background-size: 480px 100%; animation: ui-shimmer 1.1s linear infinite;
+}
+.route-card.skeleton i + i { width: 60%; }
+#plan-results.fresh .route-card { animation: ui-rise 0.63s var(--ease-out) both; animation-delay: calc(168ms + var(--i, 0) * 126ms); }
+#plan-results.fresh .plan-actions { animation: ui-rise 0.56s var(--ease-out) both; }
+#plan-results.fresh .route-card.sel { animation: ui-rise 0.63s var(--ease-out) calc(168ms + var(--i, 0) * 126ms) both, ui-glow 1.4s ease-out 0.98s; }
+.route-card { transition: border-color 0.28s, background 0.28s, transform 0.21s; }
+.route-card:hover { transform: translateX(2px); }
+.route-card.sel .rc-detail { animation: ui-expand 0.56s var(--ease-out) both; }
+.route-card.sel .spark path:last-of-type { stroke-dasharray: 600; stroke-dashoffset: 600; animation: spark-draw 1.4s var(--ease-out) 0.21s forwards; }
+@keyframes spark-draw { to { stroke-dashoffset: 0; } }
+.rc-warn { animation: ui-rise 0.49s var(--ease-out) 0.28s both; }
+.plan-point { animation: ui-from-left 0.49s var(--ease-out) both; }
+.pin span { animation: pin-drop 0.77s var(--ease-out) both; }
+.drive-btn { position: relative; overflow: hidden; }
+.drive-btn::after {
+  content: ""; position: absolute; inset: 0; transform: translateX(-100%);
+  background: linear-gradient(100deg, transparent 30%, rgba(255, 255, 255, 0.28) 50%, transparent 70%);
+  animation: btn-shine 2.6s ease-in-out 0.8s infinite;
+}
+@keyframes btn-shine { 0%, 55% { transform: translateX(-100%); } 100% { transform: translateX(100%); } }
+
+/* Ficha de la misión (3D) y parte de llegada */
+.mission { animation: ui-rise 0.7s var(--ease-out) 0.21s both; }
+.mission-verdict { animation: ui-press 0.7s var(--ease-spring) 0.7s both; }
+.hero-bar i { transition: width 0.49s linear; }
+.arrival { animation: ui-pop 1.26s var(--ease-spring) both; }
+
+/* Vistas a ras de suelo: telemetría y minimapa entran por la derecha */
+.drive-hud:not([hidden]) { animation: ui-from-right 1.4s var(--ease-out) 0.56s both; }
+.minimap:not([hidden]) { animation: ui-rise 1.4s var(--ease-out) 0.98s both; }
+.zone-label:not([hidden]) { animation: ui-fade 0.84s ease both; }
+
+/* Presentación y avisos */
+.pres-start-box { animation: ui-pop 0.98s var(--ease-spring) both; }
+.pres-start { animation: ui-fade 0.35s ease both; }
+.pres-spot:not([hidden]) { animation: pres-pulse 1.6s ease-in-out infinite, ui-fade 0.3s ease; }
+.pres-chips .pres-chip { animation: ui-rise 0.56s var(--ease-out) both; }
+.pres-chips .pres-chip:nth-child(2) { animation-delay: 0.11s; }
+.pres-chips .pres-chip:nth-child(3) { animation-delay: 0.22s; }
+.pres-card.in .pres-points li { animation: ui-from-left 0.56s var(--ease-out) both; }
+.pres-card.in .pres-points li:nth-child(2) { animation-delay: 0.11s; }
+.pres-card.in .pres-points li:nth-child(3) { animation-delay: 0.22s; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; animation-delay: 0ms !important; transition-duration: 0.01ms !important; }
+}
+
+/* ---------- Mapa 2D vacío: pantalla completa y aviso de espera ---------- */
+/* El mapa ocupa siempre todo el ancho; la ficha se desliza por encima */
+body.page-map[data-ui="mix"] #map { left: 0; }
+body.page-map .float-right { animation: none; transition: transform 1.1s var(--ease-out), opacity 0.8s ease; }
+body.page-map.map-empty .float-right { transform: translateX(-105%); opacity: 0; pointer-events: none; }
+body.page-map .leaflet-bottom.leaflet-left { transition: left 1.1s var(--ease-out); }
+body.page-map[data-ui="mix"]:not(.map-empty) .leaflet-bottom.leaflet-left { left: 380px; }
+body.page-map .layerbar { transition: left 1.1s var(--ease-out); }
+body.page-map.map-empty .layerbar { left: 16px; }
+body.page-map.map-empty .dock { display: none; }
+body.page-map .dock { animation: ui-rise 1s var(--ease-out) both; }
+body.page-map.map-empty .drive-toast { display: none; }
+
+.map-hint {
+  position: absolute; top: 18px; left: 50%; z-index: 610; display: flex; align-items: center; gap: 14px;
+  padding: 12px 20px 12px 14px; transform: translate(-50%, -160%); opacity: 0; pointer-events: none;
+  background: rgba(0, 0, 0, 0.9); border: 1px solid var(--line-2); border-top: 2px solid var(--accent);
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.55); white-space: nowrap;
+}
+.map-hint.in { animation: hint-drop 1.1s var(--ease-spring) both, hint-blink 1.6s ease-in-out 1.1s infinite; }
+.map-hint.out { animation: hint-up 0.7s ease both; }
+@keyframes hint-drop {
+  0% { transform: translate(-50%, -160%); opacity: 0; }
+  25% { opacity: 1; }
+  45% { opacity: 0.35; }
+  65% { opacity: 1; }
+  100% { transform: translate(-50%, 0); opacity: 1; }
+}
+@keyframes hint-blink {
+  0%, 100% { opacity: 1; box-shadow: 0 10px 40px rgba(0, 0, 0, 0.55), 0 0 0 0 rgba(255, 106, 61, 0); }
+  50% { opacity: 0.72; box-shadow: 0 10px 40px rgba(0, 0, 0, 0.55), 0 0 22px 2px rgba(255, 106, 61, 0.45); }
+}
+@keyframes hint-up { from { transform: translate(-50%, 0); opacity: 1; } to { transform: translate(-50%, -160%); opacity: 0; } }
+.mh-pin {
+  display: grid; place-items: center; width: 30px; height: 30px; flex: none; border-radius: 50% 50% 50% 0;
+  transform: rotate(-45deg); border: 2px solid #fff; animation: mh-bob 1.6s ease-in-out infinite;
+}
+.mh-pin.origin { background: #2fbf71; }
+.mh-pin.dest { background: #ef5350; }
+.mh-pin b { transform: rotate(45deg); font: 600 13px var(--font); color: #fff; }
+@keyframes mh-bob { 0%, 100% { transform: rotate(-45deg) translate(0, 0); } 50% { transform: rotate(-45deg) translate(3px, -3px); } }
+.mh-text { display: flex; flex-direction: column; gap: 2px; }
+.mh-text b { font: 600 14px var(--cond); letter-spacing: 0.18em; text-transform: uppercase; color: var(--text); }
+.mh-text small { font-size: 12.5px; color: var(--text-2); }
+body.presenting .map-hint { display: none; }
+@media (max-width: 900px) { .map-hint { top: 10px; white-space: normal; width: calc(100% - 20px); } }
+
+/* ==========================================================================
+   Movimiento estilo Apple: los paneles y avisos entran deslizándose desde fuera
+   de la pantalla por su propio borde (sin fundidos), con la curva de
+   desaceleración de iOS. Sustituye a las entradas con fundido de más arriba.
+   ========================================================================== */
+:root {
+  --apple: cubic-bezier(0.32, 0.72, 0, 1);          /* hojas y paneles de iOS */
+  --apple-spring: cubic-bezier(0.34, 1.18, 0.64, 1); /* con un pequeño rebote al llegar */
+  --apple-in: cubic-bezier(0.55, 0, 0.75, 0.2);      /* salida: acelera hacia fuera */
+}
+@keyframes slide-in-left { from { transform: translateX(calc(-100% - var(--off, 0px))); } to { transform: none; } }
+@keyframes slide-in-right { from { transform: translateX(calc(100% + var(--off, 0px))); } to { transform: none; } }
+@keyframes slide-in-up { from { transform: translateY(calc(100% + var(--off, 0px))); } to { transform: none; } }
+@keyframes slide-in-down { from { transform: translateY(calc(-100% - var(--off, 0px))); } to { transform: none; } }
+@keyframes slide-out-down { from { transform: none; } to { transform: translateY(calc(100% + var(--off, 0px))); } }
+
+/* Al cargar: cabecera desde arriba, ficha desde la izquierda, barra inferior desde abajo,
+   vistas y controles desde la derecha, capas desde arriba */
+.topbar > * { --off: 24px; animation: slide-in-down 0.9s var(--apple) both; }
+.stat { --off: 24px; animation: slide-in-down 0.9s var(--apple) both; animation-delay: calc(var(--i, 0) * 90ms); }
+body[data-ui="mix"] .float-right { animation: slide-in-left 1.4s var(--apple) both; }
+body.page-map .float-right { animation: none; transition: transform 1.2s var(--apple); }
+body.page-map.map-empty .float-right { transform: translateX(-100%); opacity: 1; }
+body.page-map .leaflet-bottom.leaflet-left, body.page-map .layerbar { transition: left 1.2s var(--apple); }
+.dock { animation: slide-in-up 1.1s var(--apple) 0.1s both; }
+body.page-map .dock { animation: slide-in-up 1.1s var(--apple) both; }
+.viewbar, .navctl { --off: 20px; animation: slide-in-right 1.2s var(--apple) 0.3s both; }
+.layerbar { --off: 24px; animation: slide-in-down 1.2s var(--apple) 0.4s both; }
+
+/* Menús de la barra inferior: suben desde debajo de la pantalla y bajan al cerrarse */
+.dock-pop:not([hidden]) { --off: 140px; animation: slide-in-up 0.8s var(--apple-spring) both; }
+.dock-pop.closing { --off: 140px; animation: slide-out-down 0.5s var(--apple-in) both; }
+.dock-pop-side:not([hidden]) { --off: 0px; animation: slide-in-left 0.9s var(--apple) both; }
+
+/* Planificador: todo entra desde el borde izquierdo de la ficha */
+.plan-status.flash { --off: 24px; animation: slide-in-left 0.6s var(--apple) both; }
+.plan-point { --off: 24px; animation: slide-in-left 0.7s var(--apple) both; }
+.route-card.skeleton { --off: 24px; animation: slide-in-left 0.6s var(--apple) both; animation-delay: calc(var(--i, 0) * 90ms); }
+#plan-results.fresh .route-card { --off: 24px; animation: slide-in-left 0.8s var(--apple) both; animation-delay: calc(150ms + var(--i, 0) * 130ms); }
+#plan-results.fresh .route-card.sel { animation: slide-in-left 0.8s var(--apple) calc(150ms + var(--i, 0) * 130ms) both, ui-glow 1.2s ease-out 1s; }
+#plan-results.fresh .plan-actions { --off: 24px; animation: slide-in-left 0.7s var(--apple) both; }
+@keyframes rc-open { from { clip-path: inset(0 0 100% 0); transform: translateY(-8px); } to { clip-path: inset(0 0 0 0); transform: none; } }
+.route-card.sel .rc-detail { animation: rc-open 0.6s var(--apple) both; }
+.rc-warn { --off: 24px; animation: slide-in-left 0.6s var(--apple) 0.3s both; }
+.mission { --off: 24px; animation: slide-in-left 1s var(--apple) 0.3s both; }
+.lb-legends > :not([hidden]) { --off: 16px; animation: slide-in-left 0.7s var(--apple) both; }
+
+/* Vistas a ras de suelo: telemetría y minimapa desde el borde derecho */
+.drive-hud:not([hidden]) { --off: 20px; animation: slide-in-right 1.2s var(--apple) 0.5s both; }
+.minimap:not([hidden]) { --off: 20px; animation: slide-in-right 1.2s var(--apple) 0.8s both; }
+
+/* Avisos y tarjetas: desde el borde más cercano */
+@keyframes toast-in { from { transform: translate(-50%, calc(100% + 150px)); } to { transform: translate(-50%, 0); } }
+@keyframes toast-out { from { transform: translate(-50%, 0); } to { transform: translate(-50%, calc(100% + 150px)); } }
+.drive-toast { animation: toast-in 0.9s var(--apple-spring) both; }
+.drive-toast.out { opacity: 1; transform: none; transition: none; animation: toast-out 0.5s var(--apple-in) both; }
+.arrival { --off: 50vh; animation: slide-in-up 1.1s var(--apple-spring) both; }
+.pres-start { animation: none; }
+.pres-start-box { --off: 50vh; animation: slide-in-up 0.9s var(--apple-spring) both; }
+.pres-2d .pres-card.in { --off: 16px; animation: slide-in-right 1.1s var(--apple) both; }
+.pres-3d .pres-card.in { --off: 396px; animation: slide-in-left 1.1s var(--apple) both; }
+.pres-card.in .pres-points li { --off: 20px; animation: slide-in-left 0.8s var(--apple) both; }
+.pres-chips .pres-chip { --off: 20px; animation: slide-in-left 0.8s var(--apple) both; }
+@media (max-width: 900px) { .pres-3d .pres-card.in { --off: 10px; } }
+
+/* Aviso del mapa: con la ficha a la vista, centrado en la zona del mapa */
+body.page-map:not(.map-empty) .map-hint { left: calc(50% + 190px); }
+@media (max-width: 900px) { body.page-map:not(.map-empty) .map-hint { left: 50%; } }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; animation-delay: 0ms !important; transition-duration: 0.01ms !important; }
+}
+.map-hint { transition: left 1.2s var(--apple); }
+
+/* ---------- Trayecto: A y B en tarjetas unidas ---------- */
+.trip { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) 36px; gap: 8px; align-items: center; }
+.trip-rows { position: relative; display: flex; flex-direction: column; }
+.trip-link {
+  position: absolute; left: 22px; top: 34px; bottom: 34px; width: 0; z-index: 0;
+  border-left: 2px dotted var(--line-2);
+}
+.trip-row {
+  position: relative; z-index: 1; display: grid; grid-template-columns: 30px minmax(0, 1fr) auto; align-items: center; gap: 10px;
+  min-height: 58px; padding: 9px 8px 9px 8px; border: 1px solid var(--line); background: var(--raise);
+  transition: border-color 0.25s, background 0.25s, transform 0.2s;
+}
+.trip-row + .trip-link + .trip-row { margin-top: 10px; }
+.trip-row.set { cursor: pointer; }
+.trip-row.set:hover { border-color: var(--line-2); transform: translateX(2px); }
+.trip-row.empty { background: transparent; border-style: dashed; }
+.trip-row.next { border-color: var(--accent); animation: trip-wait 1.6s ease-in-out infinite; }
+@keyframes trip-wait { 50% { box-shadow: 0 0 0 3px rgba(255, 106, 61, 0.18); } }
+.trip-dot {
+  display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50% 50% 50% 0; transform: rotate(-45deg);
+  border: 2px solid #fff; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+}
+.trip-dot b { transform: rotate(45deg); font: 600 12px var(--font); color: #fff; }
+.trip-dot.origin { background: #2fbf71; }
+.trip-dot.dest { background: #ef5350; }
+.trip-row.empty .trip-dot { background: transparent; border-color: var(--line-2); box-shadow: none; }
+.trip-row.empty .trip-dot b { color: var(--text-3); }
+.trip-row.next .trip-dot { border-color: var(--accent); }
+.trip-row.next .trip-dot b { color: var(--accent); }
+.trip-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.trip-label { font: 600 10px var(--cond); letter-spacing: 0.2em; text-transform: uppercase; color: var(--text-3); }
+.trip-name { font-size: 13px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.trip-row.empty .trip-name { color: var(--text-3); font-style: normal; }
+.trip-row.next .trip-name { color: var(--text); }
+.trip-meta { display: flex; gap: 10px; font-size: 11.5px; color: var(--text-2); }
+.trip-slope.ok { color: var(--ok); }
+.trip-slope.warn { color: var(--warn); }
+.trip-slope.bad { color: var(--bad); }
+.trip-x {
+  display: grid; place-items: center; width: 26px; height: 26px; border: 1px solid transparent; background: none;
+  color: var(--text-3); cursor: pointer; transition: color 0.2s, border-color 0.2s, background 0.2s;
+}
+.trip-x:hover { color: var(--text); border-color: var(--line-2); background: rgba(255, 255, 255, 0.04); }
+.trip-swap {
+  display: grid; place-items: center; width: 36px; height: 36px; border-radius: 50%;
+  border: 1px solid var(--line-2); background: var(--raise); color: var(--text-2); cursor: pointer;
+  transition: color 0.2s, border-color 0.2s, transform 0.45s var(--apple-spring);
+}
+.trip-swap:hover:not(:disabled) { color: var(--text); border-color: var(--text); transform: rotate(180deg); }
+.trip-swap:active:not(:disabled) { transform: rotate(180deg) scale(0.92); }
+.trip-swap:disabled { opacity: 0.35; cursor: default; }
+.trip-summary {
+  display: flex; gap: 18px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line);
+  font-size: 12px; color: var(--text-3);
+}
+.trip-summary b { color: var(--text); font-weight: 500; font-size: 13px; }
+/* Entrada: cada tarjeta desde la izquierda, en cascada */
+.trip-row { --off: 24px; animation: slide-in-left 0.7s var(--apple) both; }
+.trip-row + .trip-link + .trip-row { animation-delay: 0.08s; }
+.trip-row.next { animation: slide-in-left 0.7s var(--apple) both, trip-wait 1.6s ease-in-out 0.7s infinite; }
+.trip-summary { --off: 24px; animation: slide-in-left 0.7s var(--apple) 0.15s both; }
+
+/* ==========================================================================
+   Ficha izquierda como panel flotante: separada de los bordes y de la barra
+   inferior, con esquinas redondeadas, borde, sombra y fondo translúcido.
+   Así se distingue a simple vista de la barra de abajo (negra, a todo el ancho).
+   ========================================================================== */
+body[data-ui="mix"] .float-right {
+  top: 14px; bottom: 14px; left: 14px; width: 380px; max-height: none;
+  border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 14px;
+  overflow-x: hidden; overflow-y: auto;
+  background: rgba(17, 19, 24, 0.86); backdrop-filter: blur(18px) saturate(1.15); -webkit-backdrop-filter: blur(18px) saturate(1.15);
+  box-shadow: 0 22px 60px rgba(0, 0, 0, 0.6), 0 2px 10px rgba(0, 0, 0, 0.35);
+  --off: 30px;
+}
+body[data-ui="mix"] .float-right .hero-photo { border-radius: 13px 13px 0 0; }
+body.page-map.map-empty .float-right { transform: translateX(calc(-100% - 40px)); }
+/* La barra inferior sigue negra y a todo el ancho, con su propio borde */
+body[data-ui="mix"] .dock { border-top: 1px solid rgba(255, 255, 255, 0.08); box-shadow: 0 -12px 30px rgba(0, 0, 0, 0.35); }
+
+/* Lo que se alinea con la ficha: ahora termina en 394 px (14 + 380) */
+body[data-ui="mix"] .chip { left: 410px; }
+body[data-ui="mix"] .layerbar { left: 410px; max-width: calc(100% - 410px - 240px); }
+body.page-map[data-ui="mix"]:not(.map-empty) .leaflet-bottom.leaflet-left { left: 396px; }
+body[data-ui="mix"] .nav-hint, .drive-toast, body.page-map:not(.map-empty) .map-hint { left: calc(50% + 197px); }
+.pres-3d .pres-card { left: 410px; width: min(470px, calc(100% - 426px)); }
+.pres-3d .pres-card.in { --off: 410px; }
+
+@media (max-width: 900px) {
+  body[data-ui="mix"] .float-right { top: auto; bottom: auto; left: auto; width: auto; margin: 10px; max-height: none; }
+  body[data-ui="mix"] .layerbar { left: 10px; max-width: calc(100% - 20px); }
+  body[data-ui="mix"] .nav-hint, .drive-toast, body.page-map:not(.map-empty) .map-hint { left: 50%; }
+  .pres-3d .pres-card { left: 10px; width: auto; }
+}
+
+/* ==========================================================================
+   Barra inferior como burbuja flotante: a la derecha de la ficha, separada de los
+   bordes, con esquinas redondeadas y el mapa (o el 3D) pasando por debajo.
+   ========================================================================== */
+:root { --dock-h: 116px; --dock-gap: 14px; --above-dock: calc(var(--dock-h) + var(--dock-gap) + 16px); }
+body[data-ui="mix"] .dock {
+  position: fixed; left: 408px; right: var(--dock-gap); bottom: var(--dock-gap); z-index: 600;
+  height: var(--dock-h); box-sizing: border-box; overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 16px;
+  background: rgba(17, 19, 24, 0.86); backdrop-filter: blur(18px) saturate(1.15); -webkit-backdrop-filter: blur(18px) saturate(1.15);
+  box-shadow: 0 22px 60px rgba(0, 0, 0, 0.6), 0 2px 10px rgba(0, 0, 0, 0.35);
+  --off: 40px;
+}
+/* El escenario ocupa ya todo el alto (la burbuja va por encima) */
+body[data-ui="mix"] .stage { grid-row: 2 / 4; }
+/* Herramientas pegadas al borde izquierdo de la burbuja, sin salirse de sus esquinas */
+body[data-ui="mix"] .dock-tools { border-radius: 16px 0 0 16px; }
+
+/* Lo que estaba encima de la barra sube por encima de la burbuja */
+.leaflet-bottom { transition: bottom 0.6s var(--apple); }
+body[data-ui="mix"] .leaflet-bottom { bottom: calc(var(--dock-h) + var(--dock-gap)); }
+body.page-map.map-empty .leaflet-bottom { bottom: 0; }
+body[data-ui="mix"] .dock-pop:not(.dock-pop-side) { bottom: calc(var(--dock-h) + var(--dock-gap) + 10px); border-radius: 14px; border-bottom: 1px solid var(--line-2); }
+body[data-ui="mix"] .chip,
+body[data-ui="mix"] .nav-hint,
+.drive-toast,
+.pres-3d .pres-card { bottom: var(--above-dock); }
+body[data-ui="mix"] .minimap { bottom: var(--above-dock); border-radius: 12px; overflow: hidden; }
+body[data-ui="mix"] .drive-hud { border-radius: 14px; }
+body[data-ui="mix"].driving .drive-hud { max-height: calc(100% - var(--above-dock) - 290px); }
+
+@media (max-width: 900px) {
+  body[data-ui="mix"] .dock { position: static; height: auto; margin: 10px; left: auto; right: auto; }
+  body[data-ui="mix"] .stage { grid-row: auto; }
+  body[data-ui="mix"] .leaflet-bottom { bottom: 0; }
+  body[data-ui="mix"] .chip, body[data-ui="mix"] .nav-hint, .drive-toast, .pres-3d .pres-card { bottom: 110px; }
+}
+body[data-ui="mix"] .dock-pop:not(.dock-pop-side) { max-height: calc(100% - var(--dock-h) - var(--dock-gap) - 40px); }
+
+/* ==========================================================================
+   Mismo estilo flotante para todos los paneles y avisos (como la ficha y la
+   burbuja inferior): esquinas redondeadas, cristal translúcido, borde fino y
+   sombra profunda. Los acentos de color pasan a ser una línea interior.
+   ========================================================================== */
+:root {
+  --glass-bg: rgba(17, 19, 24, 0.86);
+  --glass-line: rgba(255, 255, 255, 0.1);
+  --glass-blur: blur(18px) saturate(1.15);
+  --glass-shadow: 0 22px 60px rgba(0, 0, 0, 0.6), 0 2px 10px rgba(0, 0, 0, 0.35);
+}
+.layerbar, body[data-ui="mix"] .layerbar,
+.dock-pop, body[data-ui="mix"] .viewbar, .navctl,
+body[data-ui="mix"] .drive-hud, body[data-ui="mix"] .minimap,
+.map-hint, .drive-toast, .pres-card, .pres-start-box, .arrival,
+body[data-ui="mix"] .chip, .nav-hint, .loading-card {
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-line);
+  -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur);
+  box-shadow: var(--glass-shadow);
+}
+.layerbar, body[data-ui="mix"] .layerbar, .dock-pop, body[data-ui="mix"] .drive-hud,
+.map-hint, .drive-toast, .pres-card, .arrival { border-radius: 14px; }
+.pres-start-box { border-radius: 18px; }
+body[data-ui="mix"] .viewbar, .navctl, body[data-ui="mix"] .minimap { border-radius: 12px; overflow: hidden; }
+body[data-ui="mix"] .chip, .nav-hint { border-radius: 999px; padding-left: 14px; padding-right: 14px; }
+.layerbar { overflow: hidden; }
+
+/* Acentos como línea interior (con esquinas redondeadas un borde de color queda mal) */
+.map-hint { border-top: 1px solid var(--glass-line); box-shadow: inset 0 2px 0 var(--accent), var(--glass-shadow); }
+.drive-toast, .pres-card, .pres-start-box { border-left: 1px solid var(--glass-line); box-shadow: inset 3px 0 0 var(--accent), var(--glass-shadow); }
+.pres.is-paused .pres-card { box-shadow: inset 3px 0 0 var(--text-3), var(--glass-shadow); }
+@keyframes hint-blink {
+  0%, 100% { opacity: 1; box-shadow: inset 0 2px 0 var(--accent), var(--glass-shadow); }
+  50% { opacity: 0.78; box-shadow: inset 0 2px 0 var(--accent), var(--glass-shadow), 0 0 26px 2px rgba(255, 106, 61, 0.45); }
+}
+
+/* Lo de dentro, a juego: botones, segmentos, tarjetas y miniaturas con esquinas suaves */
+body[data-ui="mix"] .btn, .pres-btn, .pres-mode, .dock-pop-close { border-radius: 10px; }
+body[data-ui="mix"] .viewbar .seg button { border-radius: 0; }
+body[data-ui="mix"] .viewbar .seg button[aria-pressed="true"] { border-radius: 8px; }
+body[data-ui="mix"] .viewbar > .seg { padding: 3px; gap: 2px; }
+.navctl button + button { border-top-color: var(--glass-line); }
+.route-card, .trip-row, .route-card.skeleton { border-radius: 12px; }
+.lb-cards .thumb { border-radius: 8px; }
+.lb-cards .layer:has(input[type="checkbox"]:checked)::after { border-radius: 3px; }
+.trip-x { border-radius: 8px; }
+.drive-toast .btn { border-radius: 10px; }
+.dh-head .btn, .dh-rates .btn { border-radius: 8px; }
+.pres-spot { border-radius: 12px; }
+.pres-spot span { border-radius: 6px; }
+.pres-ripple::before { border-radius: 50%; }
+.dock-tool[aria-expanded="true"] { border-radius: 0; }
+.mission, .live { border-radius: 0; }
+/* Leyendas y tarjetas de ayuda dentro de los paneles */
+.legend3d .ramp, .layer-legend .ramp { border-radius: 4px; }
+/* Tooltips del mapa a juego */
+.leaflet-tooltip {
+  background: var(--glass-bg); color: var(--text); border: 1px solid var(--glass-line); border-radius: 8px;
+  box-shadow: var(--glass-shadow); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur);
+}
+.leaflet-tooltip-top::before { border-top-color: rgba(17, 19, 24, 0.86); }
+.leaflet-control-zoom { border-radius: 12px !important; overflow: hidden; box-shadow: var(--glass-shadow) !important; border: 1px solid var(--glass-line) !important; }
+.leaflet-bar a, .leaflet-control-zoom a { background: var(--glass-bg) !important; }
+.coords, .leaflet-control-scale-line { border-radius: 8px; }
+/* Los menús abiertos quedan por encima de los controles del mapa (Leaflet usa z-index 1000) */
+body[data-ui="mix"] .dock-pop { z-index: 1100; }
+body[data-ui="mix"] .dock { z-index: 1050; }
+
+/* ==========================================================================
+   Ficha compacta: cabe entera sin desplazarse (mapa y 3D)
+   ========================================================================== */
+/* Cabecera: en el mapa sin foto (el propio mapa ya es la imagen); en 3D, foto baja */
+body.page-map .float-right .hero-photo { display: none; }
+body[data-ui="mix"] .float-right .hero-photo { height: 104px; }
+body[data-ui="mix"] .hero-body { padding: 4px 18px 12px; }
+body.page-map .hero-body { padding-top: 14px; }
+body[data-ui="mix"] .hero-title h2 { font-size: 24px; }
+body[data-ui="mix"] .hero-meta { margin-top: 2px; font-size: 10.5px; }
+body[data-ui="mix"] .hero-meta2, body[data-ui="mix"] .hero-prog > .hero-ends:first-child { display: none; }
+body[data-ui="mix"] .hero-prog { margin-top: 10px; }
+body[data-ui="mix"] .hero-bar { margin: 0 0 6px; }
+
+/* Secciones del planificador más juntas */
+.plan-side #panel-plan .sec { padding: 10px 18px 12px; }
+.plan-side #panel-plan .sec-title { margin-bottom: 6px; }
+/* Acciones en una sola fila */
+.plan-side .plan-actions { grid-template-columns: 1.5fr 1fr auto; gap: 6px; margin-bottom: 8px; }
+.plan-side .plan-actions .drive-btn { grid-column: auto; height: 34px; font-size: 11px; }
+.plan-side .plan-actions .btn { height: 34px; padding: 0 10px; font-size: 10.5px; }
+/* Tarjetas de ruta compactas */
+.plan-side .route-card { padding: 8px 12px; margin-top: 6px; }
+.plan-side .rc-head { line-height: 1.2; }
+.plan-side .rc-meta { font-size: 10.5px; margin-top: 2px; }
+.plan-side .rc-detail { margin-top: 6px; }
+.plan-side .rc-detail .spark { height: 30px; }
+.plan-side .spark-labels { display: none; }
+.plan-side .rc-kv { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px 8px; margin: 6px 0 0; }
+.plan-side .rc-kv div { min-width: 0; }
+.plan-side .rc-kv dt { font-size: 9.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.plan-side .rc-kv dd { font-size: 12px; margin: 0; }
+.plan-side .rc-warn { margin-top: 4px; font-size: 11px; }
+/* Trayecto compacto */
+.trip-row { min-height: 46px; padding: 6px 8px; gap: 8px; }
+.trip-row + .trip-link + .trip-row { margin-top: 6px; }
+.trip-dot { width: 24px; height: 24px; }
+.trip-dot b { font-size: 11px; }
+.trip-label { font-size: 9px; }
+.trip-name { font-size: 12px; }
+.trip-meta { font-size: 10.5px; }
+.trip-link { left: 19px; top: 28px; bottom: 28px; }
+.trip-swap { width: 32px; height: 32px; }
+.trip-summary { margin-top: 8px; padding-top: 8px; font-size: 11px; }
+.trip-summary b { font-size: 12px; }
+.plan-side .plan-status { margin-top: 6px; font-size: 11px; }
+
+/* 3D: datos del punto en tres columnas */
+body[data-ui="mix"] #plan-point .metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); padding: 2px 0; }
+body[data-ui="mix"] #plan-point .metric { padding: 8px 10px 8px 18px; }
+body[data-ui="mix"] #plan-point .metric:nth-child(even) { padding-left: 18px; }
+body[data-ui="mix"] #plan-point .metric:nth-child(3n + 2), body[data-ui="mix"] #plan-point .metric:nth-child(3n) { padding-left: 6px; }
+body[data-ui="mix"] #plan-point .metric .v { font-size: 15px; }
+body[data-ui="mix"] #plan-point .metric .k { font-size: 9.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+body[data-ui="mix"] #plan-point .metric .d { font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+body[data-ui="mix"] #plan-point .meter { margin-top: 3px; }
+/* Telemetría: cada dato en una línea con su barra */
+body[data-ui="mix"] .live { padding: 10px 18px 10px; }
+.live-head { margin-bottom: 4px; }
+.live-head b { font-size: 14px; }
+.live-row { grid-template-columns: 112px minmax(0, 1fr) auto; align-items: center; gap: 8px; margin-top: 5px; }
+.live-row em { grid-column: auto; grid-row: 1; grid-column-start: 2; }
+.live-row b { grid-column-start: 3; grid-row: 1; }
+.live-row span { font-size: 11px; }
+/* Informe de misión: cifras en una fila y los avisos; lo que está bien, plegado */
+body[data-ui="mix"] .mission { padding: 10px 18px 12px; }
+.mission-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin: 8px 0 8px; }
+.mission-grid b { font-size: 13.5px; }
+.mission-grid span { font-size: 10px; }
+.mission-checks { gap: 4px; padding-top: 8px; font-size: 11.5px; }
+.mission-more summary { margin-top: 6px; color: var(--text-3); font-size: 11px; cursor: pointer; list-style: none; }
+.mission-more summary::before { content: "▸ "; }
+.mission-more[open] summary::before { content: "▾ "; }
+.mission-more summary::-webkit-details-marker { display: none; }
+.mission-more .mission-checks { border-top: 0; padding-top: 4px; }
+/* La ficha mide lo que su contenido (tarjeta flotante); solo si no cabe llega abajo y se desplaza */
+body[data-ui="mix"] .float-right { bottom: auto; max-height: calc(100% - 28px); }
+@media (max-width: 900px) { body[data-ui="mix"] .float-right { max-height: none; } }
+
+/* Columna derecha (vistas, telemetría y minimapa) con el mismo ancho y alineada */
+:root { --side-w: 300px; }
+body[data-ui="mix"] .viewbar { width: var(--side-w); display: flex; }
+body[data-ui="mix"] .viewbar > .seg:first-child { flex: 1; }
+body[data-ui="mix"] .viewbar > .seg:last-child { flex: 2; }
+body[data-ui="mix"] .viewbar > .seg { display: flex; }
+body[data-ui="mix"] .viewbar .seg button { flex: 1; padding-left: 0; padding-right: 0; text-align: center; }
+body[data-ui="mix"] .drive-hud { width: var(--side-w); right: 16px; }
+body[data-ui="mix"] .minimap { width: var(--side-w); right: 16px; }
+@media (max-width: 900px) { body[data-ui="mix"] .viewbar { width: auto; } }
+
+/* La burbuja inferior ocupa todo el ancho (también bajo la ficha) y la ficha termina justo encima */
+body[data-ui="mix"] .dock { left: var(--dock-gap); }
+body[data-ui="mix"] .float-right { max-height: calc(100% - var(--dock-h) - 3 * var(--dock-gap)); }
+body.page-map.map-empty .float-right { max-height: calc(100% - 28px); }
+@media (max-width: 900px) { body[data-ui="mix"] .float-right { max-height: none; } }
+
+/* Telemetría a ras de suelo: nunca llega al minimapa (queda un hueco entre los dos) */
+:root { --mm-h: 215px; }
+body[data-ui="mix"].driving .drive-hud { max-height: calc(100% - 68px - var(--above-dock) - var(--mm-h) - 16px); }
+
+/* Las capas también se pueden cambiar a ras de suelo */
+body.driving .layerbar { display: block; }

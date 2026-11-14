@@ -91,16 +91,23 @@ export function reportHTML(plan, r) {
         <span class="mission-verdict">${r.verdict}</span>
       </div>
       <div class="mission-grid">
-        <div><b>${fmtH(s.hours)}</b><span>${plan.vehicle.maxHours ? `de ${num(plan.vehicle.maxHours)} h de autonomía` : 'de travesía'}</span></div>
-        <div><b>${num(r.dose, 2)} mSv</b><span>dosis estimada · ${num(r.earthDays)} días de fondo terrestre</span></div>
-        <div><b>${fmt.km(s.distance_m)}</b><span>+${num(s.ascent_m)} / −${num(s.descent_m)} m</span></div>
-        <div><b>${r.batteryUse !== null ? `${num(r.batteryUse * 100)} %` : `${num(s.max_slope_deg, 1)}°`}</b><span>${r.batteryUse !== null ? 'de batería' : 'pendiente máxima'}</span></div>
+        <div title="${plan.vehicle.maxHours ? `de ${num(plan.vehicle.maxHours)} h de autonomía` : 'de travesía'}"><b>${fmtH(s.hours)}</b><span>${plan.vehicle.maxHours ? `de ${num(plan.vehicle.maxHours)} h` : 'travesía'}</span></div>
+        <div title="Dosis estimada: ${num(r.earthDays)} días de radiación natural en la Tierra"><b>${num(r.dose, 2)}</b><span>mSv</span></div>
+        <div title="+${num(s.ascent_m)} / −${num(s.descent_m)} m"><b>${fmt.km(s.distance_m)}</b><span>+${num(s.ascent_m)} m</span></div>
+        <div><b>${r.batteryUse !== null ? `${num(r.batteryUse * 100)} %` : `${num(s.max_slope_deg, 1)}°`}</b><span>${r.batteryUse !== null ? 'batería' : 'pend. máx.'}</span></div>
       </div>
-      <ul class="mission-checks">
-        ${r.checks.map((c) => `<li class="lv-${LEVEL_CLS[c.level]}"><i>${LEVEL_ICON[c.level]}</i>${c.text}</li>`).join('')}
-      </ul>
-      <p class="mission-note">Radiación estimada (modelo RAD, sin tormentas solares). Frío relativo (THEMIS).</p>
+      ${checksHTML(r)}
     </div>`;
+}
+
+// Avisos primero; lo que está en orden se pliega para que el informe quepa sin desplazarse
+function checksHTML(r) {
+  const li = (c) => `<li class="lv-${LEVEL_CLS[c.level]}"><i>${LEVEL_ICON[c.level]}</i>${c.text}</li>`;
+  const warn = r.checks.filter((c) => c.level > 0);
+  const ok = r.checks.filter((c) => c.level === 0);
+  return `${warn.length ? `<ul class="mission-checks">${warn.map(li).join('')}</ul>` : ''}
+    ${ok.length ? `<details class="mission-more"><summary>${ok.length} ${ok.length === 1 ? 'punto' : 'puntos'} en orden</summary>
+      <ul class="mission-checks">${ok.map(li).join('')}</ul></details>` : ''}`;
 }
 
 // Parte de llegada al terminar la reproducción

@@ -7,8 +7,8 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
 // Geometría del modelo (metros, eje +Z hacia delante, +X a la izquierda del rover, Y arriba).
 // Medida a partir de las propias mallas del GLB.
-const WHEEL_R = 0.262;
-const WHEELS = { front: { x: 1.062, z: 1.095 }, mid: { x: 1.184, z: -0.09 }, rear: { x: 1.062, z: -1.165 } };
+export const WHEEL_R = 0.262;
+export const WHEELS = { front: { x: 1.062, z: 1.095 }, mid: { x: 1.184, z: -0.09 }, rear: { x: 1.062, z: -1.165 } };
 const WHEEL_Y = 0.263;
 const ROCKER_PIVOT = { x: 0.85, y: 0.93, z: 0.175 }; // unión balancín–cuerpo (diferencial)
 const BOGIE_PIVOT = { x: 1.0, y: 0.70, z: -0.55 }; // unión bogie–balancín

@@ -19,6 +19,7 @@ import { createSky, sunDirection, skyState } from './sky.js';
 import { createPhotos } from './photos.js';
 import { satAt, renderHero as paintHero, renderStopHero as paintStopHero } from './hero.js';
 import { createMinimap } from './minimap.js';
+import { microRelief, shake, createDust, createTracks, createRocks } from './fx.js';
 
 // Textura: CTX como base y HiRISE encima (solo cubre parte de la zona).
 const TEXTURES = [
@@ -33,10 +34,21 @@ const COLORS = colors();
 const state = { idx: 0, exag: 2, follow: true, astro: false, playing: null, layer: 'sat' };
 // Intro cinematográfica: al entrar en 3d.html (una vez por sesión) o con #intro; nunca en la presentación
 const presenting = (() => { try { return !!sessionStorage.getItem('ares:present'); } catch { return false; } })();
-const wantsIntro = !presenting && (/intro/.test(location.hash) || (() => {
+// 3d.html#drive (al crear una ruta en el mapa): entra directamente al volante con un vuelo de cámara
+const wantsDrive = (/[?&]drive/.test(location.search) || /drive/.test(location.hash)) && !presenting;
+const wantsIntro = !presenting && !wantsDrive && (/intro/.test(location.hash) || (() => {
   try { return sessionStorage.getItem('ares:intro') !== '1'; } catch { return true; }
 })());
 let planDock = null; // barra de tiempo en modo "ruta planificada"
+// Al volante: el modelo del rover empieza a cargarse ya, en paralelo con el relieve
+const earlyRover = wantsDrive
+  ? import('./rover.js').then((m) => ({ m, rig: m.loadRover('assets/rover/perseverance.glb') }))
+  : null;
+// Cambios de URL solo cuando la página se ve: si se ha prerenderizado (Chrome), cambiarla antes haría
+// que el navegador descartara la versión preparada.
+const whenShown = (fn) => (document.prerendering
+  ? document.addEventListener('prerenderingchange', fn, { once: true })
+  : fn());
 
 // ---------- Carga de teselas ----------
 const progress = { done: 0, total: 0 };
@@ -408,6 +420,7 @@ async function setLayer(key) {
   terrainDetail.uDetStrength.value = key === 'sat' || key === 'color' ? 1 : 0;
   updateTerrainTint();
   renderLegend(key);
+  syncGround();
 }
 
 function renderLegend(key) {
@@ -1046,7 +1059,13 @@ const planViz = plan ? (() => {
   const doneMatP = new LineMaterial({ color: '#ffffff', linewidth: 5 });
   const done = new Line2(doneGeoP, doneMatP);
   doneGeoP.instanceCount = 0;
-  world.add(line, done);
+  // Gris: hasta donde se llegó (aunque se haya vuelto atrás)
+  const trailGeo = new LineGeometry();
+  trailGeo.setPositions(pos.map((v, i) => (i % 3 === 1 ? v + 0.5 : v)));
+  const trailMat = new LineMaterial({ color: '#c8ced6', linewidth: 6, transparent: true, opacity: 0.85 });
+  const trail = new Line2(trailGeo, trailMat);
+  trailGeo.instanceCount = 0;
+  world.add(line, trail, done);
 
   const beamMarker = (color, radius = 22) => {
     const g = new THREE.Group();
@@ -1062,7 +1081,7 @@ const planViz = plan ? (() => {
   const pinA = beamMarker('#2fbf71');
   const pinB = beamMarker('#ef5350');
   const vehicle = beamMarker(PLAN_COLOR, 30);
-  const mats = [lineMat, doneMatP];
+  const mats = [lineMat, doneMatP, trailMat];
   const setRes = () => mats.forEach((m) => m.resolution.set(host.clientWidth, host.clientHeight));
   new ResizeObserver(setRes).observe(host);
   setRes();
@@ -1073,10 +1092,11 @@ const planViz = plan ? (() => {
       pinB.position.copy(worldPoint(plan.dest.lon, plan.dest.lat, 6 * state.exag));
     },
     setVisible(on) {
-      [line, done, pinA, pinB, vehicle].forEach((o) => { o.visible = on; });
+      [line, trail, done, pinA, pinB, vehicle].forEach((o) => { o.visible = on; });
     },
     vehicle,
     done: doneGeoP,
+    trail: trailGeo,
   };
   viz.setVisible(false);
   return viz;
@@ -1194,11 +1214,6 @@ function renderPlanPoint(s) {
   const pct = ((dose - rad.min) / (rad.max - rad.min || 1)) * 100;
   const left = Math.max(0, plan.hours.at(-1) - s.t);
   el.innerHTML = `
-    <header class="insp-head">
-      <div class="insp-top"><div class="insp-sol"><small>T+</small>${clock(s.t).slice(2)}</div></div>
-      <div class="insp-meta">Mi ruta · ${plan.vehicleName}</div>
-      <div class="insp-meta">${latLon({ lat: s.lat, lon: s.lon })}</div>
-    </header>
     <div class="metrics">
       ${metricHTML({ k: 'Elevación', v: num(s.elev), unit: 'm', sub: 'DTM CTX 20 m' })}
       ${metricHTML({ k: 'Recorrido', v: num(s.dist / 1000, 2), unit: 'km', sub: `de ${fmt.km(total)}` })}
@@ -1283,10 +1298,12 @@ function enterPlanMode() {
       const v = worldPoint(s.lon, s.lat, ROUTE_LIFT_M * state.exag);
       planViz.vehicle.position.copy(v);
       planViz.done.instanceCount = s.seg;
+      const pl = planDock?.player;
+      planViz.trail.instanceCount = pl && pl.maxT > 0 ? pl.sample(pl.maxT).seg : 0;
     },
   });
   $('to-other-view').href = 'index.html#plan';
-  history.replaceState(null, '', '#plan');
+  whenShown(() => history.replaceState(null, '', wantsDrive ? '3d.html#plan' : '#plan'));
   renderPlanPanel();
   renderMissionPanel();
   if (state.drive) {
@@ -1331,11 +1348,13 @@ $('plan-sec').addEventListener('click', (e) => {
 // El modelo oficial de NASA se carga solo al entrar en estas vistas (11,7 MB).
 let roverRig = null;
 let roverLoading = null;
+let roverModule = null;
 const drive = {
   mode: null, pos: null, yaw: 0, steer: 0, lastT: null, prevExag: 2, look: new THREE.Vector3(),
   snapCam: true, patch: null, patchBusy: false, hudT: 0, lastSample: null, speedKmh: 0, rate: null,
   base: new THREE.Vector3(), view: { yaw: 0, pitch: 0, dist: 8.2 }, dragging: false, token: 0,
-  ribbonAt: null, progress: 0, pathTotal: 0, s: null, ss: 0, pathKey: null, camYaw: 0, camLift: 0, povQ: new THREE.Quaternion(),
+  ribbonAt: null, progress: 0, pathTotal: 0, s: null, ss: 0, pathKey: null, camYaw: 0, camLift: 0, camTilt: 0, povQ: new THREE.Quaternion(),
+  vis: 0, cine: null, maxT: -1, maxRaw: 0,
 };
 const sceneToLonLat = (x, z) => [lonC + x / (cosLat * M_PER_DEG), latC - z / M_PER_DEG];
 const groundAt = (x, z) => {
@@ -1348,6 +1367,68 @@ const wrapAngle = (a) => Math.atan2(Math.sin(a), Math.cos(a));
 // general nunca asome por encima del suelo detallado.
 const GROUND_LIFT = 0.35;
 const driveGround = (x, z) => groundAt(x, z) + GROUND_LIFT;
+// Altura del suelo a escala real (exageración 1), sea cual sea la exageración actual: los parches de suelo
+// se construyen así para poder prepararlos desde la vista general (que va a ×2).
+const groundAt1 = (x, z) => {
+  const [lon, lat] = sceneToLonLat(x, z);
+  return terrainAt(lon, lat) - elevRef;
+};
+// Efectos a ras de suelo (fx.js): polvo de las ruedas y huellas
+const dust = createDust(scene);
+const tracks = createTracks(scene);
+dust.visible = false;
+tracks.visible = false;
+// Rocas 3D alrededor del vehículo (fx.js); dejan libre la ruta
+let clearKey = null;
+let clearGrid = null;
+function pathClearance(x, z) {
+  const P = activePath();
+  if (clearKey !== P.key) {
+    clearKey = P.key;
+    clearGrid = new Map();
+    for (let i = 0; i < P.n; i++) {
+      const k = `${Math.floor(P.x[i] / 10)},${Math.floor(P.z[i] / 10)}`;
+      if (!clearGrid.has(k)) clearGrid.set(k, []);
+      clearGrid.get(k).push(i);
+    }
+  }
+  const gx = Math.floor(x / 10);
+  const gz = Math.floor(z / 10);
+  let best = Infinity;
+  for (let dx = -1; dx <= 1; dx++) {
+    for (let dz = -1; dz <= 1; dz++) {
+      for (const i of clearGrid.get(`${gx + dx},${gz + dz}`) ?? []) best = Math.min(best, Math.hypot(P.x[i] - x, P.z[i] - z));
+    }
+  }
+  return best;
+}
+const rocks = createRocks(scene, { heightAt: (x, z) => driveGround(x, z), clearance: (x, z) => pathClearance(x, z) - 0.6 });
+rocks.visible = false;
+// A ras de suelo, el suelo detallado (HiRISE + rocas) va con las capas de imagen; con las de datos
+// (altura, pendiente, frío, radiación) se ve la propia capa en el terreno.
+function syncGround() {
+  const dataLayer = state.layer !== 'sat' && state.layer !== 'color';
+  const on = !!drive.mode;
+  if (drive.patch) drive.patch.mesh.visible = on;
+  rocks.visible = on && drive.mode !== 'astro';
+  if (rocks.visible) rocks.update(drive.base.x, drive.base.z, true);
+  // Capas de datos: el suelo detallado se tiñe con su color (sin el ocre de la imagen)
+  if (patchMat) {
+    const L = patchMat.userData.layer;
+    const tex = dataLayer ? LAYERS[state.layer].texture : null;
+    if (tex) L.uLayerMap.value = tex;
+    L.uLayerMix.value = tex ? 0.82 : 0;
+    patchMat.userData.det.uTint.value.copy(tex ? new THREE.Vector3(1, 1, 1) : MARS_TINT);
+  }
+}
+// UV del parche → UV de la textura del terreno (las dos son planos girados: v crece hacia el norte)
+function setPatchLayerUV(cx, cz) {
+  if (!patchMat) return;
+  const s = PATCH.size;
+  patchMat.userData.layer.uLayerUV.value.set((cx - s / 2 + widthM / 2) / widthM, (heightM / 2 - cz - s / 2) / heightM, s / widthM, s / heightM);
+}
+const wheelTmp = Array.from({ length: 4 }, () => new THREE.Vector3());
+const easeInOut = (k) => (k < 0.5 ? 4 * k * k * k : 1 - (-2 * k + 2) ** 3 / 2);
 
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -1363,21 +1444,22 @@ sun.shadow.normalBias = 0.03;
 scene.add(sun.target);
 const SUN_DIR = sun.position.clone().normalize();
 
-async function ensureRover() {
+async function ensureRover({ quiet = false } = {}) {
   if (roverRig) return roverRig;
+  const chip = $('tex-status');
+  if (!quiet) chip.textContent = 'Cargando el modelo de Perseverance (NASA)…';
   roverLoading ??= (async () => {
-    const chip = $('tex-status');
-    chip.textContent = 'Cargando el modelo de Perseverance (NASA)…';
-    const { loadRover } = await import('./rover.js');
-    const rig = await loadRover('assets/rover/perseverance.glb', (k) => {
-      chip.textContent = `Cargando el modelo de Perseverance (NASA)… ${Math.round(k * 100)} %`;
+    const early = await earlyRover;
+    roverModule ??= early?.m ?? await import('./rover.js');
+    const rig = early ? await early.rig : await roverModule.loadRover('assets/rover/perseverance.glb', (k) => {
+      if (chip.textContent) chip.textContent = `Cargando el modelo de Perseverance (NASA)… ${Math.round(k * 100)} %`;
     });
     rig.root.visible = false;
     scene.add(rig.root);
-    chip.textContent = '';
     return rig;
   })();
   roverRig = await roverLoading;
+  chip.textContent = '';
   return roverRig;
 }
 
@@ -1532,8 +1614,37 @@ function driveFrame(t) {
     // Dirección: curvatura (giro por metro) → ángulo de las ruedas de esquina
     const steerWanted = ds > 0.01 && !jump ? Math.max(-0.5, Math.min(0.5, (dyaw / ds) * 1.1)) : drive.steer * 0.95;
     drive.steer += (steerWanted - drive.steer) * Math.min(1, dt * 6);
-    rig.update({ heightAt: driveGround, x: p.x, z: p.z, yaw: drive.yaw, ds: jump ? 0 : ds, steer: drive.steer });
+    // Las ruedas pisan un microrrelieve de ±4 cm (fx.js): la suspensión trabaja y el cuerpo se mueve
+    rig.update({ heightAt: (x, z) => driveGround(x, z) + microRelief(x, z), x: p.x, z: p.z, yaw: drive.yaw, ds: jump ? 0 : ds, steer: drive.steer });
+    // Vibración según la velocidad en pantalla (m/s): cabeceo, alabeo y un poco de rebote
+    const vis = dt > 0 && !jump ? ds / dt : 0;
+    drive.vis += (vis - drive.vis) * (1 - Math.exp(-dt * 4));
+    const amp = Math.min(1, drive.vis / 6);
+    const tt = t / 1000;
+    rig.body.rotation.x += shake(tt, 1) * 0.007 * amp;
+    rig.body.rotation.z += shake(tt, 2) * 0.006 * amp;
+    rig.root.position.y += shake(tt, 3) * 0.012 * amp;
     drive.base.copy(rig.root.position);
+    // Polvo de las ruedas traseras y centrales, y huellas de las centrales
+    if (fresh) tracks.reset();
+    else if (jump) tracks.jump(); // las huellas de lo ya recorrido se quedan
+    if (fresh || jump) dust.reset();
+    if (ds > 0.001 && !jump) {
+      const W = roverModule.WHEELS;
+      const c = Math.cos(drive.yaw);
+      const sn = Math.sin(drive.yaw);
+      const at = (v, mx, mz) => {
+        const x = p.x + mx * c + mz * sn;
+        const z = p.z - mx * sn + mz * c;
+        return v.set(x, driveGround(x, z) + 0.03, z); // el parche de suelo ya va elevado GROUND_LIFT
+      };
+      at(wheelTmp[0], W.rear.x, W.rear.z);
+      at(wheelTmp[1], -W.rear.x, W.rear.z);
+      at(wheelTmp[2], W.mid.x, W.mid.z);
+      at(wheelTmp[3], -W.mid.x, W.mid.z);
+      dust.emit(wheelTmp, drive.vis, dt, { x: -sn, z: -c });
+      tracks.add(wheelTmp[2], wheelTmp[3], drive.s);
+    }
   } else {
     drive.base.set(p.x, driveGround(p.x, p.z), p.z);
   }
@@ -1544,17 +1655,33 @@ function driveFrame(t) {
     else if (!planDock.player.playing) drive.speedKmh = 0;
     drive.lastSample = smp;
   }
-  updateDriveCamera(dt);
+  if (planDock) {
+    const pl = planDock.player;
+    if (fresh || drive.maxT !== pl.maxT) {
+      drive.maxT = pl.maxT;
+      if (pl.maxT > 0) {
+        const ms = pl.sample(pl.maxT);
+        const M = toLocal(ms.lon, ms.lat, 0);
+        drive.maxRaw = pathProgress(P.raw, M.x, M.z, ms.seg);
+      } else drive.maxRaw = 0;
+    }
+  }
+  updateDriveCamera(dt, t);
+  dust.update(dt, host.clientHeight, camera.fov);
   updateShadow();
   updatePatch();
+  if (fresh) rocks.reset();
+  rocks.update(drive.base.x, drive.base.z);
   updateRibbon();
   updateMinimap(P);
   if (t - drive.hudT > 250) { drive.hudT = t; renderHud(); }
 }
 
 // Cámaras a ras de suelo. drive.view guarda lo que el usuario ha girado con el ratón.
-function updateDriveCamera(dt) {
+function updateDriveCamera(dt, t = performance.now()) {
   const base = drive.base;
+  const amp = Math.min(1, drive.vis / 6);
+  const tt = t / 1000;
   const v = drive.view;
   const lookDir = (yaw, pitch) => new THREE.Vector3(Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch));
   if (drive.mode === 'chase') {
@@ -1564,18 +1691,31 @@ function updateDriveCamera(dt) {
     // Posición enganchada al rover (no se queda atrás a ninguna velocidad); solo se suavizan el giro
     // y lo que la cámara tiene que subir para no meterse en el terreno.
     const a = drive.camYaw + Math.PI + v.yaw;
-    const e = THREE.MathUtils.clamp(0.38 + v.pitch, 0.05, 1.45);
+    // En las bajadas el suelo de detrás del rover está más alto: la cámara sube con esa pendiente
+    // (si no, se queda rozando la ladera, a la altura del rover y mirando al suelo)
+    const bx = base.x + Math.sin(a) * v.dist;
+    const bz = base.z + Math.cos(a) * v.dist;
+    const tilt = Math.max(0, Math.atan2(groundAt(bx, bz) + GROUND_LIFT - base.y, v.dist));
+    drive.camTilt = drive.snapCam ? tilt : drive.camTilt + (tilt - drive.camTilt) * (1 - Math.exp(-dt * 3));
+    const e = THREE.MathUtils.clamp(0.38 + v.pitch + drive.camTilt * 1.15, 0.05, 1.45);
     const want = base.clone().addScaledVector(lookDir(a, e), v.dist);
-    const lift = Math.max(0, groundAt(want.x, want.z) + 1.0 - want.y);
+    const lift = Math.max(0, groundAt(want.x, want.z) + 2.0 - want.y); // al menos 2 m sobre el suelo
     drive.camLift = drive.snapCam ? lift : drive.camLift + (lift - drive.camLift) * (1 - Math.exp(-dt * 6));
     want.y += Math.max(lift * 0.6, drive.camLift);
     drive.snapCam = false;
     const fwd = new THREE.Vector3(Math.sin(drive.camYaw), 0, Math.cos(drive.camYaw));
     drive.look.copy(base).addScaledVector(fwd, 3 * Math.max(0, Math.cos(v.yaw)));
     drive.look.y += 1.0;
-    camera.position.copy(want);
+    // Temblor de cámara (como si fuera montada en el propio vehículo de apoyo)
+    want.x += shake(tt, 5) * 0.03 * amp;
+    want.y += shake(tt, 6) * 0.025 * amp;
     camera.up.set(0, 1, 0);
-    camera.lookAt(drive.look);
+    if (drive.cine) {
+      cineStep(want, dt);
+    } else {
+      camera.position.copy(want);
+      camera.lookAt(drive.look);
+    }
   } else if (drive.mode === 'pov') {
     // Navcam: la cámara va solidaria al cuerpo (cabecea y se ladea con él); el ratón gira el mástil.
     // La cabeza del mástil se oculta en esta vista (sería la propia cámara).
@@ -1593,7 +1733,7 @@ function updateDriveCamera(dt) {
       drive.povQ.slerp(bodyQ, 1 - Math.exp(-dt * 6));
     }
     const q = drive.povQ;
-    const dir = lookDir(v.yaw, -0.1 + v.pitch).applyQuaternion(q);
+    const dir = lookDir(v.yaw + shake(tt, 7) * 0.003 * amp, -0.1 + v.pitch + shake(tt, 8) * 0.004 * amp).applyQuaternion(q);
     camera.position.copy(eye);
     camera.up.set(0, 1, 0).applyQuaternion(q);
     camera.lookAt(eye.clone().add(dir));
@@ -1604,6 +1744,41 @@ function updateDriveCamera(dt) {
     camera.position.copy(eye);
     camera.up.set(0, 1, 0);
     camera.lookAt(eye.clone().add(lookDir(drive.yaw + v.yaw, -0.1 + v.pitch)));
+  }
+}
+
+// Vuelo de entrada a la vista de coche: desde donde estuviera la cámara general, una curva que baja por
+// detrás del rover hasta engancharse a la cámara de persecución. La niebla y el campo de visión pasan de
+// los de la vista general a los de a ras de suelo durante el vuelo.
+function cineStep(want, dt) {
+  const c = drive.cine;
+  c.t += dt;
+  const k = Math.min(1, c.t / c.dur);
+  const e = easeInOut(k);
+  const back = new THREE.Vector3(-Math.sin(drive.camYaw), 0, -Math.cos(drive.camYaw));
+  const ctrl = drive.base.clone().addScaledVector(back, c.reach);
+  ctrl.y = Math.max(ctrl.y + c.reach * 0.35, groundAt(ctrl.x, ctrl.z) + 20);
+  // Bézier cuadrática: origen → por detrás y por encima del rover → posición de persecución
+  const u = 1 - e;
+  camera.position.set(
+    u * u * c.pos.x + 2 * u * e * ctrl.x + e * e * want.x,
+    u * u * c.pos.y + 2 * u * e * ctrl.y + e * e * want.y,
+    u * u * c.pos.z + 2 * u * e * ctrl.z + e * e * want.z,
+  );
+  const kl = 1 - (1 - k) ** 3; // la mirada llega antes al rover que la cámara
+  camera.lookAt(c.look.clone().lerp(drive.look, kl));
+  const lerpLog = (a, b) => Math.exp(Math.log(a) + (Math.log(b) - Math.log(a)) * e);
+  scene.fog.near = lerpLog(c.fog[0], 600);
+  scene.fog.far = lerpLog(c.fog[1], 9000);
+  camera.near = lerpLog(2, 0.1);
+  camera.far = lerpLog(200000, 30000);
+  camera.fov = c.fov + (GROUND_FOV.chase - c.fov) * e;
+  camera.updateProjectionMatrix();
+  if (k >= 1) {
+    drive.cine = null;
+    scene.fog.near = 600;
+    scene.fog.far = 9000;
+    c.done?.();
   }
 }
 
@@ -1668,7 +1843,7 @@ function resetGroundView() {
 // que el resto de la app. A lo lejos los chevrones se funden en una línea fina.
 const RIBBON = { back: 40, ahead: 1800 };
 const ribbonMat = new THREE.ShaderMaterial({
-  uniforms: { uCur: { value: 0 }, uCenter: { value: 0 } },
+  uniforms: { uCur: { value: 0 }, uCenter: { value: 0 }, uDone: { value: 0 } },
   vertexShader: `
     attribute float along;
     attribute float side;
@@ -1691,6 +1866,7 @@ const ribbonMat = new THREE.ShaderMaterial({
   fragmentShader: `
     uniform float uCur;
     uniform float uCenter;
+    uniform float uDone;
     varying float vAlong;
     varying float vSide;
     varying float vHalf;
@@ -1712,7 +1888,9 @@ const ribbonMat = new THREE.ShaderMaterial({
       float a = max(chev * near * 0.78, line * 0.5) * start;
       a *= 1.0 - smoothstep(${(RIBBON.ahead * 0.65).toFixed(1)}, ${RIBBON.ahead.toFixed(1)}, vAlong - uCenter);
       if (a < 0.01) discard;
-      gl_FragColor = vec4(vTint, a);
+      // Ya recorrido (se llegó más allá y se volvió atrás): gris y algo más tenue
+      float done = 1.0 - smoothstep(uDone - 1.5, uDone + 1.5, vAlong);
+      gl_FragColor = vec4(mix(vTint, vec3(0.74, 0.77, 0.81), done), a * (1.0 - done * 0.3));
       #include <colorspace_fragment>
     }`,
   transparent: true,
@@ -1843,6 +2021,7 @@ function updateRibbon() {
   }
   ribbon.visible = true;
   ribbonMat.uniforms.uCur.value = c;
+  ribbonMat.uniforms.uDone.value = drive.maxRaw > 0 ? rawToSmooth(P, drive.maxRaw) : -1e9;
   for (const f of Object.values(flags)) {
     if (!f.visible) continue;
     const d = camera.position.distanceTo(f.position);
@@ -1896,7 +2075,7 @@ function updateMinimap(P) {
     });
   }
   camera.getWorldDirection(camDirTmp);
-  minimap.update({ x: drive.pos.x, z: drive.pos.y, s: drive.s, yaw: drive.yaw, camDir: [camDirTmp.x, camDirTmp.z], fov: camera.fov });
+  minimap.update({ x: drive.pos.x, z: drive.pos.y, s: drive.s, yaw: drive.yaw, camDir: [camDirTmp.x, camDirTmp.z], fov: camera.fov, maxS: drive.maxRaw ?? 0 });
 }
 
 // Parche de suelo con HiRISE (~0,3 m/px) alrededor del rover: el relieve general (~4,6 m/px)
@@ -1906,8 +2085,11 @@ function updatePatch() {
   const p = drive.base;
   const near = drive.patch && Math.hypot(p.x - drive.patch.cx, p.z - drive.patch.cz) < PATCH.size * 0.22;
   if (near || drive.patchBusy) return;
+  loadPatchAt(p.x, p.z);
+}
+function loadPatchAt(cx, cz) {
   drive.patchBusy = true;
-  buildPatch(p.x, p.z).then(({ mesh, map, stretch }) => {
+  return buildPatch(cx, cz).then(({ mesh, map, stretch }) => {
     // Un único material para todos los parches: al cambiar de parche solo se cambia la imagen.
     // (Antes cada parche traía su material y, al liberar el anterior, Three desechaba el shader
     // compilado y lo volvía a compilar: ~65 ms de parón cada vez que el suelo se regeneraba.)
@@ -1920,15 +2102,17 @@ function updatePatch() {
       scene.remove(drive.patch.mesh);
       drive.patch.mesh.geometry.dispose();
     }
-    drive.patch = { mesh, cx: p.x, cz: p.z };
-    mesh.visible = !!drive.mode;
+    drive.patch = { mesh, cx, cz };
+    setPatchLayerUV(cx, cz);
     scene.add(mesh);
+    syncGround();
   }).finally(() => { drive.patchBusy = false; });
 }
 
-let patchMat = null;
-function patchMaterial(map) {
-  if (patchMat) return patchMat;
+// Máscara circular con borde suave: los parches de detalle se funden con el relieve general
+let radialTex = null;
+function radialAlpha() {
+  if (radialTex) return radialTex;
   const a = document.createElement('canvas');
   a.width = 256;
   a.height = 256;
@@ -1938,11 +2122,22 @@ function patchMaterial(map) {
   grad.addColorStop(1, '#000');
   ag.fillStyle = grad;
   ag.fillRect(0, 0, 256, 256);
+  radialTex = new THREE.CanvasTexture(a);
+  return radialTex;
+}
+let patchMat = null;
+function patchMaterial(map) {
+  if (patchMat) return patchMat;
   const mat = new THREE.MeshLambertMaterial({
-    map, alphaMap: new THREE.CanvasTexture(a), transparent: true, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4,
+    map, alphaMap: radialAlpha(), transparent: true, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4,
   });
-  const det = applyGroundDetail(mat, { sizeU: PATCH.size, sizeV: PATCH.size, fine: 3, coarse: 17, fade: [25, 160], normalTile: 3, normalScale: 1 });
+  const det = applyGroundDetail(mat, { sizeU: PATCH.size, sizeV: PATCH.size, fine: 2.5, coarse: 17, fade: [30, 200], normalTile: 2.5, normalScale: 1.6 });
   det.uTint.value.copy(MARS_TINT);
+  mat.userData.det = det;
+  // Capa de datos (altura, pendiente, frío, radiación) teñida sobre el suelo detallado: se sigue viendo el
+  // relieve fino, las rocas y el grano, con el color de la capa. uLayerUV: del UV del parche al del terreno.
+  const layerU = { uLayerMap: { value: texture }, uLayerMix: { value: 0 }, uLayerUV: { value: new THREE.Vector4(0, 0, 1, 1) } };
+  mat.userData.layer = layerU;
   // Contraste de HiRISE en la GPU (antes se recorrían todos los píxeles en el hilo principal).
   // x = ganancia, y = media de la imagen, z = media de referencia (CTX).
   const stretch = { value: new THREE.Vector3(1, 0.5, 0.5) };
@@ -1951,13 +2146,19 @@ function patchMaterial(map) {
   mat.onBeforeCompile = (shader, r) => {
     detailCompile(shader, r);
     shader.uniforms.uStretch = stretch;
+    Object.assign(shader.uniforms, layerU);
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', '#include <common>\nuniform vec3 uStretch;')
+      .replace('#include <common>', '#include <common>\nuniform vec3 uStretch;\nuniform sampler2D uLayerMap;\nuniform float uLayerMix;\nuniform vec4 uLayerUV;')
       .replace('#include <map_fragment>', `#include <map_fragment>
 {
   float sv = pow(max(diffuseColor.r, 0.0), 1.0 / 2.2);
   float ov = clamp(uStretch.z + (sv - uStretch.y) * uStretch.x, 0.0, 1.0);
   diffuseColor.rgb = vec3(pow(ov, 2.2));
+  if (uLayerMix > 0.0) {
+    vec3 lc = texture2D(uLayerMap, uLayerUV.xy + vMapUv * uLayerUV.zw).rgb;
+    // Color de la capa modulado por el brillo de la imagen: se conservan sombras y textura
+    diffuseColor.rgb = mix(diffuseColor.rgb, lc * (0.45 + ov * 1.3), uLayerMix);
+  }
 }`);
   };
   mat.customProgramCacheKey = () => 'ground-detail-stretch';
@@ -1970,7 +2171,7 @@ async function buildPatch(cx, cz) {
   const geo = new THREE.PlaneGeometry(PATCH.size, PATCH.size, PATCH.seg, PATCH.seg);
   geo.rotateX(-Math.PI / 2);
   const pos = geo.attributes.position;
-  for (let i = 0; i < pos.count; i++) pos.setY(i, driveGround(cx + pos.getX(i), cz + pos.getZ(i)));
+  for (let i = 0; i < pos.count; i++) pos.setY(i, groundAt1(cx + pos.getX(i), cz + pos.getZ(i)) + GROUND_LIFT);
   geo.computeVertexNormals();
   const [west, north] = sceneToLonLat(cx - half, cz - half);
   const [east, south] = sceneToLonLat(cx + half, cz + half);
@@ -2093,18 +2294,34 @@ function applyDriveRate() {
 }
 
 const GROUND_BUTTON = { astro: 'overview', chase: 'drive', pov: 'pov' };
-let roverModule = null;
 // Vistas a ras de suelo: astronauta, coche y POV comparten escala real, suelo detallado, cielo y ruta en el suelo.
-async function enterDrive(mode) {
+async function enterDrive(mode, { cinematic = true, long = false, autoplay = false } = {}) {
   if (document.body.classList.contains('touring')) return;
   setViewButton(GROUND_BUTTON[mode]);
   const token = ++drive.token;
   if (mode !== 'astro') {
-    roverModule ??= await import('./rover.js');
     await ensureRover();
     if (token !== drive.token) return; // se eligió otra vista mientras cargaba el modelo
   }
+  // Vuelo de entrada solo al pasar de la vista general a la de coche
+  let cine = null;
+  if (!drive.mode && mode === 'chase' && cinematic) {
+    // La exageración pasa de ×N a ×1: se conserva la altura de la cámara sobre el suelo
+    const e0 = state.exag;
+    const keepAlt = (v) => { const g = groundAt1(v.x, v.z); return new THREE.Vector3(v.x, v.y - g * e0 + g, v.z); };
+    const pos = keepAlt(camera.position);
+    const dist = pos.distanceTo(keepAlt(controls.target));
+    cine = {
+      t: 0, dur: long ? 4.4 : 2.8, pos, look: keepAlt(controls.target), fov: camera.fov,
+      fog: [scene.fog.near, scene.fog.far], reach: THREE.MathUtils.clamp(dist * 0.12, 60, 400),
+      done: autoplay ? () => { if (planDock && !planDock.player.playing) planDock.player.play(); } : null,
+    };
+  }
   if (!drive.mode) {
+    tracks.reset();
+    dust.reset();
+    tracks.visible = true;
+    dust.visible = true;
     if (state.astro) setAstroMode(false);
     drive.prevExag = state.exag;
     setExaggeration(1); // a escala real: con el relieve exagerado el rover iría "escalando"
@@ -2138,14 +2355,29 @@ async function enterDrive(mode) {
   }
   if (drive.rate === null || !planDock?.player.playing) applyDriveRate();
   resetGroundView();
-  if (drive.patch) drive.patch.mesh.visible = true;
   updateFlags();
   updateTerrainTint();
+  syncGround();
+  drive.cine = cine;
+  if (cine) {
+    // El vuelo empieza en la pose de la vista general: niebla y FOV de partida
+    scene.fog.near = cine.fog[0];
+    scene.fog.far = cine.fog[1];
+    camera.near = 2;
+    camera.far = 200000;
+    camera.fov = cine.fov;
+    camera.updateProjectionMatrix();
+  } else if (autoplay && planDock && !planDock.player.playing) {
+    planDock.player.play();
+  }
 }
 
 function exitDrive() {
   drive.token++;
   if (!drive.mode) return;
+  drive.cine = null;
+  tracks.visible = false;
+  dust.visible = false;
   drive.mode = null;
   state.drive = null;
   drive.rate = null;
@@ -2156,7 +2388,7 @@ function exitDrive() {
     roverRig.root.visible = false;
     roverRig.povHidden.forEach((o) => { o.visible = true; });
   }
-  if (drive.patch) drive.patch.mesh.visible = false;
+  syncGround();
   ribbon.visible = false;
   updateFlags();
   sun.castShadow = false;
@@ -2395,21 +2627,146 @@ renderer.setAnimationLoop((t) => {
   renderer.render(scene, camera);
 });
 
+// ---------- Precarga de las vistas a ras de suelo ----------
+// En cuanto la vista está lista se carga en segundo plano todo lo que necesita "Coche": el modelo del
+// rover, el suelo HiRISE del inicio de la ruta y los shaders (compilados de antemano). Así pulsar
+// Coche es inmediato en vez de tardar unos segundos.
+let preloadPromise = null;
+function preloadDrive() {
+  preloadPromise ??= (async () => {
+    await ensureRover({ quiet: true });
+    if (!drive.patch && !drive.patchBusy) {
+      const P = activePath();
+      loadPatchAt(P.x[0], P.z[0]); // el suelo del inicio de la ruta (se descarga en paralelo)
+    }
+    // Compilar los materiales de las vistas a ras de suelo con la luz que tendrán (sombras activas)
+    const objs = [roverRig.root, sky.mesh, ribbon, dust.points, drive.patch?.mesh, ...rocks.meshes].filter(Boolean);
+    const was = objs.map((o) => o.visible);
+    const shadow = sun.castShadow;
+    objs.forEach((o) => { o.visible = true; });
+    sun.castShadow = true;
+    const done = renderer.compileAsync ? renderer.compileAsync(scene, camera) : Promise.resolve(renderer.compile(scene, camera));
+    objs.forEach((o, k) => { o.visible = was[k]; });
+    sun.castShadow = shadow;
+    await done;
+  })().catch((err) => { console.warn('Precarga del rover:', err); preloadPromise = null; });
+  return preloadPromise;
+}
+
+// ---------- Detalle al acercarse en la vista general ----------
+// La imagen general va a ~5 m/px: de cerca se ve borrosa. Al acercar la cámara se monta un parche de
+// 1,6 km con HiRISE (~0,8 m/px) y CTX alrededor del punto que se mira, dentro del grupo del relieve
+// (así sigue la exageración vertical). Se desvanece por los bordes y solo se ve con la capa Satélite.
+const DETAIL = { size: 1600, seg: 200, tex: 2048, near: 3400 };
+const detail = { mesh: null, cx: 0, cz: 0, busy: false, mat: null };
+function detailMaterial(map) {
+  if (detail.mat) return detail.mat;
+  const mat = new THREE.MeshLambertMaterial({
+    map, alphaMap: radialAlpha(), transparent: true, depthWrite: false,
+    polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
+  });
+  applyGroundDetail(mat, { sizeU: DETAIL.size, sizeV: DETAIL.size, fine: 6, coarse: 40, fade: [50, 350], fadeCoarse: [150, 700], normalScale: 0 });
+  mat.customProgramCacheKey = () => 'ground-detail-general';
+  detail.mat = mat;
+  return mat;
+}
+async function buildDetail(cx, cz) {
+  const half = DETAIL.size / 2;
+  const geo = new THREE.PlaneGeometry(DETAIL.size, DETAIL.size, DETAIL.seg, DETAIL.seg);
+  geo.rotateX(-Math.PI / 2);
+  const pos = geo.attributes.position;
+  for (let i = 0; i < pos.count; i++) pos.setY(i, groundAt1(cx + pos.getX(i), cz + pos.getZ(i)) + 0.6);
+  geo.computeVertexNormals();
+  const [west, north] = sceneToLonLat(cx - half, cz - half);
+  const [east, south] = sceneToLonLat(cx + half, cz + half);
+  const e = { west, east, north, south };
+  const canvas = document.createElement('canvas');
+  canvas.width = DETAIL.tex;
+  canvas.height = DETAIL.tex;
+  const g = canvas.getContext('2d');
+  const map = makeTexture(canvas);
+  const prog = { done: 0, total: 0 };
+  await drawMosaic({ layer: SITE.tiles.ctx.layer, ext: 'png', z: 13, bounds: SITE.tiles.ctx.bounds }, e, g, { prog });
+  await drawMosaic({ layer: SITE.tiles.hirise.layer, ext: 'png', z: 16, bounds: SITE.tiles.hirise.bounds }, e, g, { prog });
+  map.needsUpdate = true;
+  const mesh = new THREE.Mesh(geo, detailMaterial(map));
+  mesh.position.set(cx, 0, cz);
+  mesh.renderOrder = 1;
+  return { mesh, map };
+}
+frameHooks.add(() => {
+  const close = camera.position.distanceTo(controls.target) < DETAIL.near;
+  const on = !state.drive && state.layer === 'sat' && close;
+  if (detail.mesh) detail.mesh.visible = on;
+  if (!on || detail.busy) return;
+  const tg = controls.target;
+  if (Math.abs(tg.x) > widthM / 2 || Math.abs(tg.z) > heightM / 2) return; // fuera del DTM no hay detalle
+  if (detail.mesh && Math.hypot(tg.x - detail.cx, tg.z - detail.cz) < DETAIL.size * 0.22) return;
+  detail.busy = true;
+  const cx = tg.x;
+  const cz = tg.z;
+  buildDetail(cx, cz).then(({ mesh, map }) => {
+    const mat = mesh.material;
+    const old = mat.map;
+    mat.map = map;
+    if (old !== map) old.dispose();
+    if (detail.mesh) { world.remove(detail.mesh); detail.mesh.geometry.dispose(); }
+    Object.assign(detail, { mesh, cx, cz });
+    world.add(mesh);
+  }).catch((err) => console.warn('Detalle HiRISE:', err)).finally(() => { detail.busy = false; });
+});
+
 // ---------- Presentación (común con el mapa: present.js) e intro ----------
 const stage = document.querySelector('.stage');
 const onFrame = (fn) => { frameHooks.add(fn); return () => frameHooks.delete(fn); };
+// Depuración: 3d.html#debug expone el estado interno en window.__ares
+if (/debug/.test(location.hash) || window.__aresDebug) window.__ares = { scene, camera, renderer, drive, dust, tracks, state, get rig() { return roverRig; } };
 const presentApi = {
   THREE, camera, controls, state, plan, stage, onFrame,
   get planDock() { return planDock; },
   worldPoint, setLayer, setExaggeration, overview, homeView, frameRoute, tweenOrbit,
   enterDrive, exitDrive: () => overview(), setHour, toggleDay, showArrival, mission,
-  preloadRover: async () => { roverModule ??= await import('./rover.js'); await ensureRover(); },
+  preloadRover: () => preloadDrive(),
   center: () => new THREE.Vector3(0, ((hMin + hMax) / 2 - elevRef) * state.exag, 0),
   radiation: () => radiationGrid(),
   zoneSize: { w: widthM, h: heightM },
   get timeOfDay() { return timeOfDay; },
 };
 const presentReady = Promise.race([textureDone, new Promise((r) => { setTimeout(r, 6000); })]);
+if (wantsDrive) {
+  // Viene del mapa ("Al volante"): sin telones. La cámara empieza ya cerca, por detrás y por encima del
+  // inicio de la ruta, y baja en curva hasta engancharse detrás del rover; al llegar arranca la ruta.
+  // En Chrome esta página se ha prerenderizado mientras se miraba el mapa: el vuelo empieza al mostrarse.
+  // (la URL pasa a 3d.html#plan en enterPlanMode, al mostrarse: recargar no repite la entrada)
+  const P = activePath();
+  const yaw0 = yawAlong(P, 0, 2, 30) ?? 0;
+  const s0 = worldPoint(...sceneToLonLat(P.x[0], P.z[0]));
+  controls.target.copy(s0);
+  camera.position.copy(s0).add(new THREE.Vector3(-Math.sin(yaw0) * 420, 260, -Math.cos(yaw0) * 420));
+  controls.update();
+  // Mientras termina de cargar el rover la cámara ya se mueve hacia el inicio de la ruta (sin imagen
+  // fija): el vuelo de entrada arranca desde donde esté, así que el movimiento es continuo.
+  const from = camera.position.clone();
+  let tA = null;
+  const approach = (t) => {
+    if (drive.mode) { frameHooks.delete(approach); return; }
+    tA ??= t;
+    const k = 1 - Math.exp(-(t - tA) / 1800); // se acerca cada vez más despacio
+    camera.position.lerpVectors(from, s0, k * 0.4);
+    controls.target.copy(s0);
+  };
+  frameHooks.add(approach);
+  planViz?.setVisible(false); // sin marcadores de la vista general: se va directo al rover
+  const patchReady = preloadDrive();
+  ensureRover({ quiet: true })
+    // Un instante para que el suelo detallado del inicio esté puesto (no se espera más de 0,4 s)
+    .then(() => Promise.race([patchReady, new Promise((r) => { setTimeout(r, 400); })]))
+    .then(() => enterDrive('chase', { autoplay: true }))
+    .finally(() => document.documentElement.classList.remove('drive-entry'));
+} else {
+  // Precarga cuando la página ya está pintada (no compite con la carga inicial)
+  setTimeout(() => preloadDrive(), wantsIntro ? 2500 : 800);
+}
 import('./present.js').then(({ startPresentation }) => startPresentation({ page: '3d', api: presentApi, ready: presentReady }));
 if (wantsIntro) {
   try { sessionStorage.setItem('ares:intro', '1'); } catch { /* sin almacenamiento: se verá cada vez */ }

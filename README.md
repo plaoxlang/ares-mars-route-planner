@@ -145,7 +145,7 @@ Después abre <http://localhost:8010>. Necesita conexión a internet: las tesela
 - Por dentro:
   - A\* sobre el DTM de 20 m: unas 460.000 celdas, 8 direcciones.
   - El motor es el A\* común del equipo, `src/planner/a-star.js` (rama `planner/a-star`), adaptado a la rejilla densa: arrays tipados, memoria reutilizada y costes con sentido (subir no cuesta lo mismo que bajar).
-  - Las tres alternativas se calculan a la vez, en tres Web Workers: unos 70 ms en total, frente a 0,2–0,7 s antes.
+  - Las tres alternativas se calculan en un Web Worker. El A* distingue el rumbo de llegada a cada celda y penaliza los giros cerrados, para evitar rutas en zigzag. Se calcula en secuencia para no multiplicar el uso de memoria de esa búsqueda.
   - Las velocidades por pendiente salen de tablas precalculadas.
   - Las celdas con más pendiente que el máximo del vehículo quedan prohibidas.
   - La velocidad depende de la pendiente del tramo (a pie, con la función de Tobler) y de la rugosidad del terreno.
@@ -217,7 +217,7 @@ ARES is a browser-based tool that helps a crew on Mars decide where to go, how l
 The app provides:
 - A 2D map (Leaflet, Mars equirectangular projection) with route planner.
 - A 3D terrain view (Three.js) with a Perseverance rover model, first-person and chase-camera views, day/night cycle, and mission report.
-- Three route alternatives (fastest, safest, least energy) computed with A* on a 20 m grid (~460,000 cells) across three Web Workers.
+- Three route alternatives (fastest, safest, least energy) computed with A* on a 20 m grid (~460,000 cells). The search tracks arrival heading and penalizes sharp turns to reduce zigzags; objectives run sequentially in one worker to limit memory use.
 
 ## Mission Objectives
 
@@ -279,7 +279,7 @@ Each alternative includes time, distance, elevation gain, maximum slope, steep s
 ### Planner internals
 - A* over the 20 m DTM: ~460,000 cells, 8 directions.
 - Shared team A* engine (`src/planner/a-star.js`), adapted to the dense grid: typed arrays, reused memory, directional costs (going uphill doesn't cost the same as downhill).
-- Three alternatives computed simultaneously in three Web Workers: ~70 ms total.
+- Three alternatives are computed sequentially in one Web Worker. The A* search tracks arrival heading and penalizes sharp turns to reduce zigzags, while preserving terrain safety constraints.
 - Speed by slope from precalculated tables; slope function of Tobler.
 - Cells steeper than the vehicle maximum are forbidden.
 - Cells with slope > 18° or surrounded by them are snapped to the nearest reachable cell (orange dashed line indicates the move).
@@ -299,7 +299,7 @@ Against the real Perseverance route: over 27 segments of ~1.5 km, the planner de
 - **Leaflet 1.9.4** — 2D map.
 - **Three.js 0.160** — 3D terrain, rover, sky.
 - **Barlow / Barlow Condensed** — typography (Google Fonts).
-- **Web Workers** — parallel route calculation (3 workers).
+- **Web Workers** — route calculation in one worker; the heading-aware search uses more memory per route state, so the three objectives run sequentially.
 - **Typed arrays** (Int32Array, Float64Array, Uint8Array) and reused search buffers — high-performance A* on dense grids.
 - **A* engine** (`src/planner/a-star.js`): supports matrix and flat cell-list formats, risk and time objectives, 8-direction movement without corner-cutting between blocked cells, octile heuristic, haversine distance on Mars (radius 3,389,500 m).
 - **Rover model**: official NASA/JPL-Caltech Perseverance glTF, articulated rocker-bogie suspension (balancers, bogies, steering legs, 6 wheels) solved frame-by-frame against the terrain. Suspension telemetry panel.

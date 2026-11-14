@@ -5,7 +5,7 @@ import { $, num, fmt, latLon } from './shared.js';
 import { savePlan, formatHours } from './route-player.js';
 import { VEHICLE, OBJECTIVES } from './plan-config.js';
 
-export function setupPlanner({ L, map, dem, onRouteChange, onPlay }) {
+export function setupPlanner({ L, map, dem, onRouteChange, onPlay, onCreated, onDrive }) {
   const state = {
     active: false,
     vehicle: { ...VEHICLE },
@@ -70,6 +70,10 @@ export function setupPlanner({ L, map, dem, onRouteChange, onPlay }) {
     notify();
     const done = resultWaiters.splice(0);
     done.forEach((fn) => fn(state.shown));
+    if (state.userEdit && state.shown.length && state.origin && state.dest) {
+      state.userEdit = false;
+      onCreated?.(currentPlan());
+    }
   }
   const resultWaiters = [];
 
@@ -101,7 +105,7 @@ export function setupPlanner({ L, map, dem, onRouteChange, onPlay }) {
   function placeMarker(kind, ll) {
     if (!markers[kind]) {
       markers[kind] = L.marker(ll, { icon: pin(kind === 'origin' ? 'A' : 'B', kind), draggable: true, keyboard: false, zIndexOffset: 1000 })
-        .on('dragend', (e) => setPoint(kind, e.target.getLatLng(), { keepMarker: true }))
+        .on('dragend', (e) => { state.userEdit = true; setPoint(kind, e.target.getLatLng(), { keepMarker: true }); })
         .addTo(layer);
     } else {
       markers[kind].setLatLng(ll);
@@ -124,6 +128,7 @@ export function setupPlanner({ L, map, dem, onRouteChange, onPlay }) {
 
   map.on('click', (e) => {
     if (!state.active) return;
+    state.userEdit = true; // ruta hecha por el usuario (no restaurada ni de la presentación)
     if (!state.origin) setPoint('origin', e.latlng);
     else if (!state.dest) setPoint('dest', e.latlng);
     else setPoint('dest', e.latlng); // con los dos puestos, un clic mueve el destino
@@ -297,7 +302,9 @@ export function setupPlanner({ L, map, dem, onRouteChange, onPlay }) {
       ? `${moved.join(' y ')} al punto alcanzable más cercano: el punto marcado está en una ladera de más de ${num(v.maxSlope)}° o aislado por ellas (línea discontinua).`
       : `${routes.length} ${routes.length === 1 ? 'ruta' : 'rutas'} · calculadas en ${num(state.ms)} ms`, moved.length ? 'warn' : 'ok');
     const actions = `<div class="plan-actions">
-      <button class="btn primary" type="button" data-act="play">
+      <button class="btn primary drive-btn" type="button" data-act="drive" title="Vuela a la vista de coche detrás del rover y arranca la ruta">
+        <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.2" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="8" cy="8" r="1.6" fill="currentColor"/><path d="M2 7.2h4.4M9.6 7.2H14M8 9.6V14" stroke="currentColor" stroke-width="1.6"/></svg>Al volante</button>
+      <button class="btn" type="button" data-act="play">
         <svg width="12" height="12" viewBox="0 0 14 14" aria-hidden="true"><path d="M3 1.8v10.4L12 7z" fill="currentColor"/></svg>Reproducir</button>
       <a class="btn" href="3d.html#plan">Ver en 3D</a></div>`;
     box.innerHTML = actions + routes.map((r, k) => {
@@ -336,11 +343,13 @@ export function setupPlanner({ L, map, dem, onRouteChange, onPlay }) {
   });
   $('plan-results').addEventListener('click', (e) => {
     if (e.target.closest('[data-act="play"]')) { onPlay?.(); return; }
+    if (e.target.closest('[data-act="drive"]')) { onDrive?.(); return; }
     const k = e.target.closest('[data-route]')?.dataset.route;
     if (k !== undefined) selectRoute(Number(k));
   });
   $('plan-swap').addEventListener('click', () => {
     if (!state.origin || !state.dest) return;
+    state.userEdit = true;
     const o = state.origin.ll;
     const d = state.dest.ll;
     state.origin = null;
@@ -363,6 +372,7 @@ export function setupPlanner({ L, map, dem, onRouteChange, onPlay }) {
     // Recupera una ruta (la guardada al volver del 3D, o la de por defecto): mismos puntos y objetivo.
     restore(plan, { fit = true } = {}) {
       if (!plan?.origin || !plan?.dest) return;
+      state.userEdit = false;
       state.wantObjective = plan.objective;
       state.origin = null;
       state.dest = null;

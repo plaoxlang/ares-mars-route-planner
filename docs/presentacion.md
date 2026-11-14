@@ -62,8 +62,8 @@ Lo que se ve en pantalla está en la tarjeta. Debajo, lo que se puede decir (lo 
 **9 · La dosis que llega al suelo (18 s).** Capa de radiación.
 > Partimos de los 0,64 mSv al día que midió el detector RAD de Curiosity, unas 100 veces la dosis natural en la Tierra. La dosis baja donde el relieve tapa cielo y sube donde hay menos atmósfera encima. Calculamos el cielo visible en 16 direcciones hasta 3 km. Es un modelo, no una medida, y la ruta acumula su dosis tramo a tramo.
 
-**10 · Al volante, sobre la ruta (22 s).** Vista de coche con el rover avanzando.
-> Es el modelo 3D oficial de Perseverance, a escala real. La suspensión rocker-bogie está simulada: cada rueda se apoya en el relieve y vemos cabeceo y alabeo en directo. La línea del suelo es la trazada, coloreada por la pendiente.
+**10 · Al volante, sobre la ruta (22 s).** La cámara baja en vuelo hasta detrás del rover y arranca.
+> Es el modelo 3D oficial de Perseverance, a escala real. La suspensión rocker-bogie está simulada: cada rueda pisa el relieve y el microrrelieve del suelo, y vemos cabeceo y alabeo en directo. El rover vibra, levanta polvo y deja huellas. La línea del suelo es la trazada, coloreada por la pendiente.
 
 **11 · Desde la cámara del rover (13 s).** Vista POV.
 > Desde la Navcam del mástil. El suelo cercano es HiRISE a 25 cm con detalle procedimental y se regenera mientras avanzamos. El minimapa sitúa la ruta.

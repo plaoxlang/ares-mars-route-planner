@@ -52,6 +52,12 @@ Después abre <http://localhost:8010>. Necesita conexión a internet: las tesela
 - **Hora del día:** el control *Hora solar* (abajo) mueve el Sol en todas las vistas. *Ver un sol* recorre de 5:30 a 19:30 en ~24 s.
   - El Sol se calcula para la latitud de Jezero con declinación de +25° (verano del hemisferio norte).
   - A ras de suelo, el cielo cambia con la hora: color caramelo de día, **halo azul alrededor del Sol al atardecer** (el polvo marciano dispersa el azul hacia delante) y estrellas de noche. Es una aproximación visual, no un modelo de transferencia radiativa.
+- **Al volante:** al crear una ruta en el mapa aparece una cuenta atrás de 4 s (*Ir ya* / *Quedarme en el mapa*; cualquier otra acción la cancela). También hay un botón *Al volante* en las rutas.
+  - El mapa vuela al inicio de la ruta, funde a negro y abre `3d.html#drive`.
+  - Ahí, tras un telón de ~0,7 s con el nombre de la ruta, la cámara baja en curva desde el aire hasta detrás del rover. Durante el vuelo pasan la exageración, la niebla y el campo de visión de la vista general a los de a ras de suelo, y al llegar la ruta arranca sola.
+  - Pulsar *Coche* desde *General* hace el mismo vuelo, más corto.
+- **Precarga:** al abrir el 3D se preparan en segundo plano el modelo del rover, el suelo HiRISE del inicio de la ruta y los shaders (`renderer.compileAsync`). Entrar en *Coche* pasa de ~2,4 s a ~0,2 s. El mapa 2D, cuando ya está cargado, descarga en segundo plano Three.js, el modelo y el relieve para que el 3D salga de la caché.
+- **Detalle al acercarse en *General*:** a menos de ~3,4 km del punto que se mira se monta un parche de 1,6 km con HiRISE (~0,8 m/px) y CTX, fundido por los bordes con el relieve. Sigue la exageración vertical y solo aparece con la capa *Satélite*.
 - **Ruta:** todas las vistas, el play y la barra de tiempo siguen *Mi ruta*: la última trazada en el planificador o, si no hay ninguna, la ruta de ejemplo de `data/jezero/default-plan.json` (del delta al borde del cráter).
 - **Vista *General*:** se navega como un mapa.
   - Arrastrar desplaza sobre el terreno, botón derecho (o Ctrl + arrastrar) gira, la rueda acerca hacia el cursor. En táctil, un dedo desplaza y dos giran y acercan.
@@ -81,6 +87,12 @@ Después abre <http://localhost:8010>. Necesita conexión a internet: las tesela
   - Panel de telemetría: cabeceo, alabeo, rumbo, velocidad, distancia recorrida y ángulo de cada balancín y bogie. Velocidades ×1 / ×10 / ×100 / ×1000 respecto al tiempo real.
   - A escala real (exageración 1×), con sombras y cielo marciano.
   - **Suelo de cerca:** alrededor del rover se monta un parche de 360 m con HiRISE (25 cm/px). Su brillo se ajusta al CTX de debajo para que no se note el borde.
+  - **Rover vivo** (`fx.js`, solo aspecto):
+    - Las ruedas pisan un microrrelieve de ±4 cm (ruido determinista), así que balancines y bogies trabajan.
+    - El cuerpo vibra según la velocidad: cabeceo, alabeo y rebote. La cámara tiembla un poco.
+    - Las ruedas levantan polvo: partículas que suben, se abren y se desvanecen.
+    - Deja huellas con el dibujo en chevrón de sus ruedas, que se desvanecen a ~260 m.
+    - Coste medido: ~3,5 ms por fotograma en total (p99 6,6 ms).
   - **Fluidez:** el parche se regenera al avanzar sin parones. Todos los parches comparten un único material (no se recompila el shader), el ajuste de contraste se hace en la GPU con la media y la desviación medidas sobre una miniatura de 128 px, y la textura es de 1024 px. La telemetría y la ficha se refrescan 4 veces por segundo. Medido en 25 s de *Coche*: 6 regeneraciones del suelo, ningún fotograma por encima de 22 ms (antes, parones de ~65 ms en cada regeneración). Encima va una **textura de detalle procedimental** (regolito, grano y gravilla a escala de centímetros, más un mapa de normales) en `detail.js`. En estas vistas el suelo se tiñe de ocre, porque la imagen de satélite es en escala de grises. El detalle procedimental también aparece al acercarse en las demás vistas y se apaga en las capas de datos.
   - Limitaciones:
     - El detalle procedimental es **solo aspecto**: no son rocas reales y no cambia ni el relieve ni lo que siente la suspensión.
@@ -136,6 +148,7 @@ Teclado: ← → avanzan o retroceden la ruta un 2 %; espacio reproduce.
 | `sky.js` | Posición del Sol según la hora y cielo de Marte (día, atardecer azul, noche) |
 | `intro.js` | Intro cinematográfica de la vista 3D |
 | `minimap.js` | Minimapa de las vistas a ras de suelo |
+| `fx.js` | Efectos a ras de suelo: microrrelieve bajo las ruedas, vibración, polvo y huellas |
 | `layout.js` | Diseño de la interfaz: coloca los menús en la barra inferior (mapa y 3D) |
 | `hero.js` | Cabecera de la ficha: imagen de satélite, estado y progreso de la ruta |
 | `present.js` | Presentación de ~4 min: guion, motor (automático / paso a paso), resaltados y cursor, paso entre mapa y 3D |

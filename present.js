@@ -230,10 +230,10 @@ const SCENES = [
     points: [
       'Modelo 3D oficial de Perseverance (NASA), a escala real.',
       'Suspensión rocker-bogie simulada: cada rueda se apoya en el relieve; cabeceo y alabeo en directo.',
-      'La línea del suelo es la trazada, coloreada por la pendiente de cada tramo.',
+      'Las ruedas pisan el microrrelieve: el cuerpo vibra, levanta polvo y deja huellas.',
     ],
-    chips: [['1:1', 'escala real'], ['6', 'ruedas apoyadas']],
-    notes: 'El modelo es el rover robótico de NASA; el vehículo de la misión es presurizado, pero sirve para ver cómo se mueve sobre este terreno.',
+    chips: [['1:1', 'escala real'], ['6', 'ruedas apoyadas'], ['0,2 s', 'para entrar al coche']],
+    notes: 'La cámara baja en vuelo hasta detrás del rover. El modelo es el rover robótico de NASA; el vehículo de la misión es presurizado, pero sirve para ver cómo se mueve sobre este terreno. Todo está precargado: entrar al coche es inmediato.',
     async run(c) {
       const { api } = c;
       setup3d(c, { layer: 'sat', hour: 16, keepDrive: true });

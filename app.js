@@ -218,7 +218,83 @@ const planner = setupPlanner({
   L, map, dem,
   onRouteChange: () => setDockMode(),
   onPlay: () => planDock?.player.toggle(),
+  onCreated: (plan) => offerDrive(plan),
+  onDrive: () => goDrive(),
 });
+
+// ---------- Al volante: del mapa a la vista de coche ----------
+// Al crear una ruta aparece una cuenta atrás; al acabar (o con "Ir ya") el mapa vuela al inicio de la
+// ruta, funde a negro y abre el 3D directamente detrás del rover (3d.html#drive).
+let driveOffer = null;
+function cancelDriveOffer() {
+  if (!driveOffer) return;
+  clearInterval(driveOffer.timer);
+  driveOffer.el.classList.add('out');
+  const el = driveOffer.el;
+  setTimeout(() => el.remove(), 300);
+  driveOffer = null;
+}
+function offerDrive(plan) {
+  if (document.body.classList.contains('presenting')) return;
+  cancelDriveOffer();
+  const el = document.createElement('div');
+  el.className = 'drive-toast';
+  el.setAttribute('role', 'status');
+  el.innerHTML = `<svg class="dt-ring" viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="17"/><circle class="dt-arc" cx="20" cy="20" r="17"/></svg>
+    <div class="dt-text"><b>Ruta lista · ${plan.labels.join(' · ')}</b><span>Al volante en <i>4</i> s</span></div>
+    <button class="btn primary" type="button" data-go>Ir ya</button>
+    <button class="btn" type="button" data-stay>Quedarme en el mapa</button>`;
+  document.querySelector('.stage').append(el);
+  let left = 4;
+  const timer = setInterval(() => {
+    left -= 1;
+    el.querySelector('i').textContent = String(left);
+    if (left <= 0) goDrive();
+  }, 1000);
+  driveOffer = { el, timer };
+  el.querySelector('[data-go]').addEventListener('click', () => goDrive());
+  el.querySelector('[data-stay]').addEventListener('click', () => cancelDriveOffer());
+}
+// Cualquier otra interacción (mapa, tarjetas, teclado) cancela la cuenta atrás
+document.addEventListener('pointerdown', (e) => { if (driveOffer && !driveOffer.el.contains(e.target)) cancelDriveOffer(); }, true);
+document.addEventListener('keydown', () => cancelDriveOffer(), true);
+map.on('zoomstart dragstart', () => { if (!leaving) cancelDriveOffer(); });
+
+let leaving = false;
+function goDrive() {
+  const plan = planner.current();
+  if (!plan || leaving) return;
+  leaving = true;
+  cancelDriveOffer();
+  planDock?.player.pause();
+  const [lat, lon] = plan.latlngs[0];
+  map.flyTo([lat, lon], 16, { duration: 1.3, easeLinearity: 0.2 });
+  const veil = document.createElement('div');
+  veil.className = 'drive-veil';
+  veil.innerHTML = `<span class="cine-kicker">Al volante</span><h2>${plan.labels.join(' · ')}</h2>`;
+  document.body.append(veil);
+  requestAnimationFrame(() => setTimeout(() => veil.classList.add('on'), 700));
+  setTimeout(() => { location.href = '3d.html#drive'; }, 1500);
+}
+
+// ---------- Precarga del 3D ----------
+// Con el mapa ya cargado, se bajan en segundo plano los archivos de la vista 3D (Three.js, el modelo
+// del rover, el relieve…) para que al ir al 3D salgan de la caché del navegador.
+const PREFETCH_3D = [
+  'https://unpkg.com/three@0.160.0/build/three.module.js',
+  ...['controls/OrbitControls.js', 'lines/Line2.js', 'lines/LineGeometry.js', 'lines/LineMaterial.js', 'lines/LineSegments2.js',
+    'lines/LineSegmentsGeometry.js', 'loaders/GLTFLoader.js', 'utils/BufferGeometryUtils.js']
+    .map((p) => `https://unpkg.com/three@0.160.0/examples/jsm/${p}`),
+  ...['scene3d.js', 'rover.js', 'fx.js', 'detail.js', 'sky.js', 'minimap.js', 'mission.js', 'photos.js', 'intro.js',
+    'data/jezero/dem_mola_463m.bin', 'data/jezero/dem_mola_463m.json', 'data/jezero/elevation_waypoints.json',
+    'assets/rover/perseverance.glb'],
+];
+function prefetch3d() {
+  PREFETCH_3D.forEach((url, k) => setTimeout(() => {
+    fetch(url, { priority: 'low', mode: url.startsWith('http') ? 'cors' : 'same-origin' }).then((r) => r.arrayBuffer()).catch(() => {});
+  }, k * 60));
+}
+(window.requestIdleCallback ?? ((fn) => setTimeout(fn, 1500)))(() => setTimeout(prefetch3d, 1500));
 planner.setActive(true);
 $('play').addEventListener('click', () => planDock?.player.toggle());
 document.addEventListener('keydown', (e) => {

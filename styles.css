@@ -1208,3 +1208,48 @@ body.presenting .nav-hint, body.presenting .chip, body.presenting .intro { displ
 /* En el mapa 2D la tarjeta va arriba a la derecha (abajo a la izquierda queda la ruta) */
 .pres-2d .pres-card { top: 72px; right: 16px; bottom: auto; left: auto; width: 420px; }
 @media (max-width: 900px) { .pres-2d .pres-card { top: auto; bottom: 110px; left: 10px; right: 10px; width: auto; } }
+
+/* ---------- Entrada al volante (3d.html#drive) ---------- */
+.cine-cover {
+  position: absolute; inset: 0; z-index: 820; display: grid; place-content: center; justify-items: center; gap: 8px;
+  background: #000; text-align: center; transition: opacity 0.9s ease;
+}
+.cine-cover.out { opacity: 0; pointer-events: none; }
+.cine-kicker { font: 600 12px var(--cond); letter-spacing: 0.3em; text-transform: uppercase; color: var(--accent); }
+.cine-cover h2 { margin: 0; font: 600 46px var(--cond); letter-spacing: 0.08em; text-transform: uppercase; color: var(--text); }
+.cine-cover p { margin: 0; color: var(--text-2); font-size: 13px; }
+body.driving .cine-cover h2 { animation: cine-in 1.2s ease both; }
+@keyframes cine-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+
+/* ---------- Al volante: cuenta atrás y fundido (mapa 2D) ---------- */
+.drive-toast {
+  position: absolute; left: calc(50% + 190px); bottom: 131px; transform: translateX(-50%); z-index: 640;
+  display: flex; align-items: center; gap: 12px; padding: 10px 12px 10px 10px;
+  background: rgba(0, 0, 0, 0.92); border: 1px solid var(--line-2); border-left: 3px solid var(--accent);
+  animation: dt-in 0.35s ease both; white-space: nowrap;
+}
+.drive-toast.out { opacity: 0; transform: translate(-50%, 8px); transition: opacity 0.25s, transform 0.25s; }
+@keyframes dt-in { from { opacity: 0; transform: translate(-50%, 10px); } to { opacity: 1; transform: translate(-50%, 0); } }
+.dt-ring { width: 34px; height: 34px; transform: rotate(-90deg); flex: none; }
+.dt-ring circle { fill: none; stroke: var(--line-2); stroke-width: 3; }
+.dt-ring .dt-arc { stroke: var(--accent); stroke-dasharray: 107; stroke-dashoffset: 0; animation: dt-count 4s linear forwards; }
+@keyframes dt-count { to { stroke-dashoffset: 107; } }
+.dt-text { display: flex; flex-direction: column; gap: 2px; }
+.dt-text b { font: 600 12px var(--cond); letter-spacing: 0.16em; text-transform: uppercase; color: var(--text); }
+.dt-text span { font-size: 12.5px; color: var(--text-2); }
+.dt-text i { font-style: normal; color: var(--accent); font-weight: 600; }
+.drive-toast .btn { height: 30px; }
+.drive-btn svg { margin-right: 6px; }
+.drive-veil {
+  position: fixed; inset: 0; z-index: 990; display: grid; place-content: center; justify-items: center; gap: 8px;
+  background: #000; opacity: 0; transition: opacity 0.7s ease; pointer-events: none; text-align: center;
+}
+.drive-veil.on { opacity: 1; }
+.drive-veil h2 { margin: 0; font: 600 46px var(--cond); letter-spacing: 0.08em; text-transform: uppercase; color: var(--text); }
+@media (max-width: 900px) {
+  .drive-toast { left: 50%; bottom: 110px; flex-wrap: wrap; white-space: normal; width: calc(100% - 20px); }
+}
+/* Acciones de la ruta: "Al volante" a todo el ancho, el resto debajo */
+.plan-side .plan-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.plan-side .plan-actions .drive-btn { grid-column: 1 / -1; height: 40px; font-size: 12px; }
+.plan-side .plan-actions .btn { justify-content: center; white-space: nowrap; }

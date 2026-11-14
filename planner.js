@@ -1,54 +1,14 @@
-// Planificador de rutas tipo "Google Maps" en el mapa 2D: origen, destino, vehículo y alternativas.
+// Planificador de rutas tipo "Google Maps" en el mapa 2D: origen, destino y alternativas.
 // El cálculo (A* sobre el DTM) va en planner-worker.js para no bloquear la página.
+// El vehículo es fijo (rover presurizado, ver plan-config.js).
 import { $, num, fmt, latLon } from './shared.js';
 import { savePlan, formatHours } from './route-player.js';
+import { VEHICLE, OBJECTIVES } from './plan-config.js';
 
-// Perfiles de partida. Son aproximaciones para el reto, editables en la interfaz:
-// - LRV: Apollo Lunar Roving Vehicle (~13 km/h máx., ~700 kg cargado, baterías ~8,7 kWh).
-// - SEV: concepto de rover presurizado de NASA (Space Exploration Vehicle); cifras supuestas.
-// - Rover robótico: del orden de Perseverance (~0,15 km/h máx.).
-export const VEHICLES = {
-  walk: {
-    name: 'Astronauta a pie', sub: 'con traje', model: 'tobler',
-    vFlat: 3, maxSlope: 18, maxHours: 8, battery_kWh: null, mass: 230, crr: 0.25, eff: 0.25, roughRef: 1.5,
-    energyLabel: 'Menos esfuerzo',
-  },
-  lrv: {
-    name: 'Rover no presurizado', sub: 'tipo Apollo LRV', model: 'rover',
-    vFlat: 10, maxSlope: 22, maxHours: 8, battery_kWh: 8.7, mass: 700, crr: 0.1, eff: 0.75, roughRef: 2.5,
-    energyLabel: 'Menos energía',
-  },
-  sev: {
-    name: 'Rover presurizado', sub: 'tipo SEV de NASA', model: 'rover',
-    vFlat: 8, maxSlope: 18, maxHours: 72, battery_kWh: 60, mass: 3000, crr: 0.08, eff: 0.75, roughRef: 2,
-    energyLabel: 'Menos energía',
-  },
-  robot: {
-    name: 'Rover robótico', sub: 'tipo Perseverance', model: 'rover',
-    vFlat: 0.12, maxSlope: 25, maxHours: null, battery_kWh: null, mass: 1025, crr: 0.15, eff: 0.5, roughRef: 1,
-    energyLabel: 'Menos energía',
-  },
-};
-
-const OBJECTIVES = [
-  { key: 'fast', label: 'Más rápida' },
-  { key: 'safe', label: 'Más segura' },
-  { key: 'energy', label: null }, // depende del vehículo
-];
-
-const SPEC_FIELDS = [
-  { key: 'vFlat', label: 'Velocidad en llano', unit: 'km/h', step: 0.1 },
-  { key: 'maxSlope', label: 'Pendiente máxima', unit: '°', step: 1 },
-  { key: 'maxHours', label: 'Autonomía', unit: 'h', step: 1 },
-  { key: 'battery_kWh', label: 'Batería', unit: 'kWh', step: 0.1 },
-  { key: 'mass', label: 'Masa con carga', unit: 'kg', step: 10 },
-];
-
-export function setupPlanner({ L, map, dem, pts, getStopIndex, onRouteChange, onPlay }) {
+export function setupPlanner({ L, map, dem, onRouteChange, onPlay }) {
   const state = {
     active: false,
-    vehicleKey: 'walk',
-    vehicle: { ...VEHICLES.walk },
+    vehicle: { ...VEHICLE },
     origin: null,
     dest: null,
     routes: [],
@@ -57,15 +17,38 @@ export function setupPlanner({ L, map, dem, pts, getStopIndex, onRouteChange, on
     ready: false,
   };
 
-  // ---------- Worker ----------
-  const worker = new Worker('planner-worker.js');
-  const heights = dem.heights.slice();
-  worker.postMessage({ type: 'init', heights, width: dem.width, height: dem.height, pxX: dem.pxX, pxY: dem.pxY }, [heights.buffer]);
-  worker.onmessage = (e) => {
-    const m = e.data;
-    if (m.type === 'ready') { state.ready = true; if (state.origin && state.dest) compute(); return; }
-    if (m.id !== state.reqId) return; // respuesta antigua
-    if (m.type === 'error') { setStatus(`Error al calcular: ${m.message}`, 'bad'); return; }
+  // ---------- Workers ----------
+  // Un worker por objetivo (rápida, segura, energía) para calcular las alternativas en paralelo; cada uno
+  // importa el A* común (src/planner/a-star.js). Con pocos núcleos se reparten entre menos workers.
+  const POOL = Math.max(1, Math.min(OBJECTIVES.length, (navigator.hardwareConcurrency || 2) - 1));
+  const workers = [];
+  let readyCount = 0;
+  const pending = { id: 0, parts: 0, routes: [], t0: 0 };
+  for (let k = 0; k < POOL; k++) {
+    const wk = new Worker('planner-worker.js', { type: 'module' });
+    const heights = dem.heights.slice();
+    wk.postMessage({ type: 'init', heights, width: dem.width, height: dem.height, pxX: dem.pxX, pxY: dem.pxY }, [heights.buffer]);
+    wk.onmessage = (e) => {
+      const m = e.data;
+      if (m.type === 'ready') {
+        readyCount++;
+        if (readyCount === POOL) { state.ready = true; if (state.origin && state.dest) compute(); }
+        return;
+      }
+      if (m.id !== state.reqId || m.id !== pending.id) return; // respuesta antigua
+      if (m.type === 'error') { setStatus(`Error al calcular: ${m.message}`, 'bad'); return; }
+      pending.routes.push(...m.routes);
+      pending.snap = m.snap ?? pending.snap;
+      if (--pending.parts > 0) return;
+      // Todas las partes: se ordenan como OBJECTIVES y se procesan juntas
+      const order = OBJECTIVES.map((o) => o.key);
+      onRoutes(pending.routes.sort((a, b) => order.indexOf(a.objective) - order.indexOf(b.objective)), Math.round(performance.now() - pending.t0));
+    };
+    workers.push(wk);
+  }
+
+  function onRoutes(routes, ms) {
+    const m = { routes, ms };
     // Datos por vértice para reproducir la ruta y llevarla a la vista 3D
     for (const r of m.routes) {
       if (r.unreachable) continue;
@@ -77,6 +60,7 @@ export function setupPlanner({ L, map, dem, pts, getStopIndex, onRouteChange, on
     }
     state.routes = m.routes;
     state.ms = m.ms;
+    state.snap = pending.snap ?? null;
     state.shown = uniqueRoutes();
     const want = state.wantObjective ?? state.lastObjective;
     state.selected = Math.max(0, state.shown.findIndex((r) => r.objectives.includes(want)));
@@ -84,7 +68,10 @@ export function setupPlanner({ L, map, dem, pts, getStopIndex, onRouteChange, on
     drawRoutes();
     renderResults();
     notify();
-  };
+    const done = resultWaiters.splice(0);
+    done.forEach((fn) => fn(state.shown));
+  }
+  const resultWaiters = [];
 
   // ---------- Coordenadas ↔ celdas del DTM ----------
   const toCell = (ll) => {
@@ -97,6 +84,10 @@ export function setupPlanner({ L, map, dem, pts, getStopIndex, onRouteChange, on
     const r = (i - c) / dem.width;
     return [dem.north - ((r + 0.5) * (dem.north - dem.south)) / dem.height, dem.west + ((c + 0.5) * (dem.east - dem.west)) / dem.width];
   };
+
+  const FIT_PAD = () => (window.innerWidth > 900
+    ? { paddingTopLeft: [420, 60], paddingBottomRight: [80, 60] }
+    : { padding: [20, 20] });
 
   // ---------- Capas del mapa ----------
   const layer = L.layerGroup();
@@ -145,18 +136,25 @@ export function setupPlanner({ L, map, dem, pts, getStopIndex, onRouteChange, on
     state.reqId += 1;
     setStatus('Calculando rutas…', 'busy');
     $('plan-results').classList.add('pending');
-    worker.postMessage({
-      type: 'plan',
-      id: state.reqId,
-      start: state.origin.cell,
-      goal: state.dest.cell,
-      vehicle: state.vehicle,
-      objectives: OBJECTIVES.map((o) => o.key),
+    // Reparto de objetivos entre los workers (uno por worker si hay suficientes)
+    const parts = workers.map(() => []);
+    OBJECTIVES.forEach((o, k) => parts[k % workers.length].push(o.key));
+    Object.assign(pending, { snap: null, id: state.reqId, parts: parts.filter((p) => p.length).length, routes: [], t0: performance.now() });
+    parts.forEach((objectives, k) => {
+      if (!objectives.length) return;
+      workers[k].postMessage({
+        type: 'plan',
+        id: state.reqId,
+        start: state.origin.cell,
+        goal: state.dest.cell,
+        vehicle: state.vehicle,
+        objectives,
+      });
     });
   }
 
   function objectiveLabel(key) {
-    return OBJECTIVES.find((o) => o.key === key).label ?? state.vehicle.energyLabel;
+    return OBJECTIVES.find((o) => o.key === key).label;
   }
 
   // Alternativas: si dos objetivos dan la misma ruta, se muestra una sola con ambas etiquetas.
@@ -192,6 +190,16 @@ export function setupPlanner({ L, map, dem, pts, getStopIndex, onRouteChange, on
         .bindTooltip(`${routes[k].labels.join(' · ')} · ${formatHours(routes[k].hours)} · ${fmt.km(routes[k].distance_m)}`, { sticky: true })
         .addTo(routeGroup);
     }
+    // Si A o B estaban en una zona inalcanzable: línea discontinua del pin al punto donde empieza o acaba la ruta
+    const sel = routes[state.selected];
+    if (sel && state.snap) {
+      const ends = [[state.snap.startMoved_m, state.origin, sel.latlngs[0]], [state.snap.goalMoved_m, state.dest, sel.latlngs.at(-1)]];
+      for (const [moved, p, end] of ends) {
+        if (moved > 0 && p) {
+          L.polyline([p.ll, end], { color: '#ffb547', weight: 2.5, opacity: 0.95, dashArray: '5 6', interactive: false }).addTo(routeGroup);
+        }
+      }
+    }
     Object.values(markers).forEach((m) => m?.bringToFront?.());
   }
 
@@ -208,9 +216,10 @@ export function setupPlanner({ L, map, dem, pts, getStopIndex, onRouteChange, on
     if (!r || !state.origin || !state.dest) return null;
     state.lastObjective = r.objectives[0];
     return {
-      origin: { lat: state.origin.ll.lat, lon: state.origin.ll.lng },
-      dest: { lat: state.dest.ll.lat, lon: state.dest.ll.lng },
-      vehicleKey: state.vehicleKey,
+      // Si A o B se movieron al punto alcanzable más cercano, la ruta empieza y acaba ahí
+      origin: { lat: r.latlngs[0][0], lon: r.latlngs[0][1] },
+      dest: { lat: r.latlngs.at(-1)[0], lon: r.latlngs.at(-1)[1] },
+      vehicleKey: 'sev',
       vehicle: state.vehicle,
       vehicleName: `${state.vehicle.name} (${state.vehicle.sub})`,
       objective: r.objectives[0],
@@ -274,12 +283,19 @@ export function setupPlanner({ L, map, dem, pts, getStopIndex, onRouteChange, on
     const routes = state.shown ?? [];
     const v = state.vehicle;
     if (!routes.length) {
-      const why = state.routes.length ? `No hay ruta transitable con una pendiente máxima de ${num(v.maxSlope)}°. Prueba otro vehículo o sube la pendiente máxima.` : '';
+      const why = state.routes.length ? `No hay ruta transitable con una pendiente máxima de ${num(v.maxSlope)}°. Prueba con otros puntos.` : '';
       box.innerHTML = why ? `<p class="plan-empty">${why}</p>` : '';
       if (why) setStatus('Sin ruta posible', 'bad');
+      $('plan-routes-sec').hidden = !why;
       return;
     }
-    setStatus(`${routes.length} ${routes.length === 1 ? 'ruta' : 'rutas'} · calculadas en ${num(state.ms)} ms`, 'ok');
+    $('plan-routes-sec').hidden = false;
+    const moved = [];
+    if (state.snap?.startMoved_m > 0) moved.push(`A se ha movido ${fmt.m(state.snap.startMoved_m)}`);
+    if (state.snap?.goalMoved_m > 0) moved.push(`B se ha movido ${fmt.m(state.snap.goalMoved_m)}`);
+    setStatus(moved.length
+      ? `${moved.join(' y ')} al punto alcanzable más cercano: el punto marcado está en una ladera de más de ${num(v.maxSlope)}° o aislado por ellas (línea discontinua).`
+      : `${routes.length} ${routes.length === 1 ? 'ruta' : 'rutas'} · calculadas en ${num(state.ms)} ms`, moved.length ? 'warn' : 'ok');
     const actions = `<div class="plan-actions">
       <button class="btn primary" type="button" data-act="play">
         <svg width="12" height="12" viewBox="0 0 14 14" aria-hidden="true"><path d="M3 1.8v10.4L12 7z" fill="currentColor"/></svg>Reproducir</button>
@@ -304,34 +320,6 @@ export function setupPlanner({ L, map, dem, pts, getStopIndex, onRouteChange, on
     }).join('');
   }
 
-  function renderVehicles() {
-    $('plan-vehicles').innerHTML = Object.entries(VEHICLES).map(([k, v]) => `
-      <label class="vehicle"><input type="radio" name="vehicle" value="${k}" ${k === state.vehicleKey ? 'checked' : ''}>
-        <span class="name">${v.name}</span><span class="meta">${v.sub}</span></label>`).join('');
-    renderSpecs();
-  }
-
-  function renderSpecs() {
-    const v = state.vehicle;
-    $('plan-specs').innerHTML = SPEC_FIELDS.filter((f) => v[f.key] !== null && v[f.key] !== undefined).map((f) => `
-      <label class="spec"><span>${f.label}</span>
-        <span><input class="num" type="number" min="0" step="${f.step}" data-spec="${f.key}" value="${v[f.key]}"> ${f.unit}</span></label>`).join('');
-  }
-
-  // Eventos
-  $('plan-vehicles').addEventListener('change', (e) => {
-    state.vehicleKey = e.target.value;
-    state.vehicle = { ...VEHICLES[state.vehicleKey] };
-    renderSpecs();
-    compute();
-  });
-  $('plan-specs').addEventListener('change', (e) => {
-    const key = e.target.dataset.spec;
-    const val = e.target.valueAsNumber;
-    if (!key || !Number.isFinite(val) || val <= 0) return;
-    state.vehicle[key] = val;
-    compute();
-  });
   $('plan-points').addEventListener('click', (e) => {
     const kind = e.target.closest('[data-clear]')?.dataset.clear;
     if (!kind) return;
@@ -351,10 +339,6 @@ export function setupPlanner({ L, map, dem, pts, getStopIndex, onRouteChange, on
     const k = e.target.closest('[data-route]')?.dataset.route;
     if (k !== undefined) selectRoute(Number(k));
   });
-  $('plan-from-rover').addEventListener('click', () => {
-    const p = pts[getStopIndex()];
-    setPoint('origin', L.latLng(p.lat, p.lon));
-  });
   $('plan-swap').addEventListener('click', () => {
     if (!state.origin || !state.dest) return;
     const o = state.origin.ll;
@@ -365,9 +349,9 @@ export function setupPlanner({ L, map, dem, pts, getStopIndex, onRouteChange, on
     setPoint('dest', o);
   });
 
-  renderVehicles();
   renderPoints();
   setStatus('Pulsa en el mapa el origen (A).');
+  $('plan-routes-sec').hidden = true;
 
   return {
     setActive(on) {
@@ -376,18 +360,32 @@ export function setupPlanner({ L, map, dem, pts, getStopIndex, onRouteChange, on
       if (on) { layer.addTo(map); extent.addTo(map); } else { extent.remove(); }
     },
     current: currentPlan,
-    // Recupera una ruta guardada (al volver desde la vista 3D): mismos puntos, vehículo y objetivo.
-    restore(plan) {
+    // Recupera una ruta (la guardada al volver del 3D, o la de por defecto): mismos puntos y objetivo.
+    restore(plan, { fit = true } = {}) {
       if (!plan?.origin || !plan?.dest) return;
-      state.vehicleKey = VEHICLES[plan.vehicleKey] ? plan.vehicleKey : 'walk';
-      state.vehicle = { ...VEHICLES[state.vehicleKey], ...plan.vehicle };
       state.wantObjective = plan.objective;
-      renderVehicles();
       state.origin = null;
       state.dest = null;
       setPoint('origin', L.latLng(plan.origin.lat, plan.origin.lon));
       setPoint('dest', L.latLng(plan.dest.lat, plan.dest.lon));
-      map.fitBounds(L.latLngBounds(plan.latlngs), { paddingTopLeft: [300, 40], paddingBottomRight: [360, 40] });
+      if (fit && plan.latlngs?.length) map.fitBounds(L.latLngBounds(plan.latlngs), FIT_PAD());
     },
+    // Para la presentación: borrar, poner puntos, elegir alternativa y esperar al cálculo
+    clear() {
+      state.reqId += 1; // descarta un cálculo en curso
+      ['origin', 'dest'].forEach((kind) => { state[kind] = null; markers[kind]?.remove(); markers[kind] = null; });
+      state.routes = [];
+      state.shown = [];
+      routeGroup.clearLayers();
+      renderPoints();
+      renderResults();
+      notify();
+      setStatus('Pulsa en el mapa el origen (A).');
+    },
+    setPoint: (kind, lat, lon) => setPoint(kind, L.latLng(lat, lon)),
+    selectRoute,
+    get routes() { return state.shown ?? []; },
+    get selected() { return state.selected; },
+    nextResult: () => new Promise((resolve) => resultWaiters.push(resolve)),
   };
 }

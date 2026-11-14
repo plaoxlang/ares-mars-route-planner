@@ -49,6 +49,10 @@ export class RoutePlayer {
 
   get speedup() { return (this.total * 3600 * 1000) / this.duration; }
 
+  // Velocidad de reproducción como múltiplo del tiempo real (×1 = velocidad real del vehículo).
+  setRate(rate) { this.duration = (this.total * 3600 * 1000) / Math.max(0.01, rate); }
+  defaultRate() { this.duration = Math.min(40000, Math.max(12000, this.route.dist.at(-1) * 2)); }
+
   sample(t) {
     const { hours, dist, elev, latlngs } = this.route;
     let lo = 0;
@@ -142,9 +146,25 @@ export function mountPlanDock({ wrap, route, colorAt, playBtn, labelEl, subEl, o
   player.seek(0);
   return {
     player,
+    get sample() { return player.sample(player.t); },
     destroy() {
       player.pause();
       wrap.innerHTML = '';
     },
   };
+}
+
+// Cifras de la cabecera (mapa y 3D): las de la ruta elegida
+export function renderPlanStats(el, plan) {
+  if (!el) return;
+  if (!plan) { el.innerHTML = ''; return; }
+  const st = plan.stats;
+  const items = [
+    [fmt.km(st.distance_m), 'Recorrido'],
+    [formatHours(st.hours), 'Tiempo estimado'],
+    [`+${num(st.ascent_m)} m`, 'Subida'],
+    [`${num(st.max_slope_deg, 1)}°`, 'Pendiente máx.'],
+    [plan.labels.join(' · '), 'Alternativa'],
+  ];
+  el.innerHTML = items.map(([v, l]) => `<div class="stat"><b>${v}</b><span>${l}</span></div>`).join('');
 }

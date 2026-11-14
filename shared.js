@@ -137,7 +137,7 @@ export const CLIMATE_NOTE = `<section class="insp-sec">
 // Panel de la ruta: leyenda de inclinación (único modo de color en Jezero).
 export function renderRouteLegend() {
   $('route-legend').innerHTML = '<div class="legend"><span><i class="sw ok"></i>&lt; 8°</span><span><i class="sw warn"></i>8–15°</span><span><i class="sw bad"></i>&gt; 15°</span></div>'
-    + '<p>Inclinación del rover en cada parada.</p>';
+    + '<p>Pendiente del terreno en cada tramo de la ruta (DTM CTX de 20 m).</p>';
 }
 
 // ---------- Perfil de elevación = barra de tiempo ----------

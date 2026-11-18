@@ -4,8 +4,9 @@ import os
 from collections import defaultdict
 
 # ===================== CONFIGURACIÓN =====================
+# RUTAS SIN PONER
 RUTA_DATOS = r""
-CARPETA_SALIDA = r"C:\Users\npsua\OneDrive\Escritorio\Héctor\Estudio\PROYECTOS\Hackathon\output"
+CARPETA_SALIDA = r""
 
 RADIO_MARTE_M = 3396190.0          # radio de Marte en metros (igual que tu dataset)
 VELOCIDAD_KMH = 1.0                # velocidad Y en km/h (ajustable)
